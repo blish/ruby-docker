@@ -4,10 +4,10 @@ Shared base images for the Rails production Dockerfiles of base-app, website, bu
 
 | Image | Use |
 |---|---|
-| `ghcr.io/blish/ruby-docker:<ruby>` | Runtime, the final stage of an app image |
-| `ghcr.io/blish/ruby-docker:<ruby>-build` | Build stage: `bundle install`, asset precompile |
+| `ghcr.io/blish/ruby:<ruby>` | Runtime, the final stage of an app image |
+| `ghcr.io/blish/ruby:<ruby>-build` | Build stage: `bundle install`, asset precompile |
 
-Ruby versions: 3.4.8, 3.4.9, 4.0.6. The list lives in the matrices of `.github/workflows/test.yml` and `publish.yml`; keep both in sync. All images are `linux/amd64` and are rebuilt on push to `main`, and without cache weekly and on manual dispatch (with `apt-get upgrade`).
+Ruby versions: 3.4.12, 4.0.9. The list lives in the matrices of `.github/workflows/test.yml` and `build.yml`; keep both in sync. All images are `linux/amd64` and are rebuilt on push to `main`, and without cache weekly and on manual dispatch (with `apt-get upgrade`).
 
 ## Contents
 
@@ -28,7 +28,7 @@ Ruby versions: 3.4.8, 3.4.9, 4.0.6. The list lives in the matrices of `.github/w
 
 ```dockerfile
 ARG RUBY_VERSION=3.4.9
-FROM ghcr.io/blish/ruby-docker:${RUBY_VERSION}-build AS build
+FROM ghcr.io/blish/ruby:${RUBY_VERSION}-build AS build
 WORKDIR /rails
 RUN npm install -g pnpm@10.8.0
 COPY Gemfile Gemfile.lock .ruby-version ./
@@ -36,7 +36,7 @@ RUN --mount=type=secret,id=BUNDLE_GITHUB__COM,env=BUNDLE_GITHUB__COM bundle inst
 COPY . .
 RUN SECRET_KEY_BASE_DUMMY=1 ./bin/rails assets:precompile && rm -rf node_modules
 
-FROM ghcr.io/blish/ruby-docker:${RUBY_VERSION}
+FROM ghcr.io/blish/ruby:${RUBY_VERSION}
 WORKDIR /rails
 COPY --chown=rails:rails --from=build /usr/local/bundle /usr/local/bundle
 COPY --chown=rails:rails --from=build /rails /rails

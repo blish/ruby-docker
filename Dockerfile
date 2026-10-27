@@ -2,8 +2,8 @@
 # check=error=true;skip=InvalidDefaultArgInFrom
 
 # Shared base images for Rails production builds.
-#   --target runtime  ghcr.io/blish/ruby-docker:<ruby>        final stage of app images
-#   --target build    ghcr.io/blish/ruby-docker:<ruby>-build  gem install and asset precompile
+#   --target runtime  ghcr.io/blish/ruby:<ruby>        final stage of app images
+#   --target build    ghcr.io/blish/ruby:<ruby>-build  gem install and asset precompile
 ARG RUBY_VERSION
 FROM docker.io/library/ruby:${RUBY_VERSION}-slim-trixie AS runtime
 
