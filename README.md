@@ -6,6 +6,7 @@ Shared base images for the Rails production Dockerfiles of base-app, website, bu
 |---|---|
 | `ghcr.io/blish/ruby:<ruby>` | Runtime, the final stage of an app image |
 | `ghcr.io/blish/ruby:<ruby>-build` | Build stage: `bundle install`, asset precompile |
+| `ghcr.io/blish/ruby-ghostscript:<version>` | Opt-in Ghostscript, see [Ghostscript](#ghostscript) |
 
 Ruby versions: 3.4.12, 4.0.9. The list lives in the matrices of `.github/workflows/test.yml` and `build.yml`; keep both in sync. All images are `linux/amd64` and are rebuilt on push to `main`, and without cache weekly and on manual dispatch (with `apt-get upgrade`).
 
@@ -42,9 +43,24 @@ COPY --chown=rails:rails --from=build /rails /rails
 CMD ["./bin/thrust", "./bin/rails", "server"]
 ```
 
+## Ghostscript
+
+Ghostscript is not part of the runtime image. Only apps that generate ZUGFeRD invoice PDFs (blish 9+, `embed_zugferd_invoice`) need it; Debian trixie's Ghostscript 10.05 produces PDFs that PDFBox can't read, so 10.06+ is built from source here. Leaving it out keeps the runtime image smaller and avoids handing uploaded PDF/EPS files to Ghostscript in apps that don't need it.
+
+To opt in, copy it into the app's final stage:
+
+```dockerfile
+FROM ghcr.io/blish/ruby:${RUBY_VERSION}
+COPY --from=ghcr.io/blish/ruby-ghostscript:10.08.0 /usr/local/ /usr/local/
+```
+
+This adds `/usr/local/bin/gs` and its resources in `/usr/local/share/ghostscript`. Nothing is compiled in the app.
+
+To update Ghostscript, bump `GHOSTSCRIPT_VERSION`, `GHOSTSCRIPT_TAG` and the tarball's sha256 in `ADD --checksum` in the `Dockerfile` (`sha256sum ghostscript-<version>.tar.gz`, after verifying the download against the release's `SHA512SUMS`) ([releases](https://github.com/ArtifexSoftware/ghostpdl-downloads/releases)), then the version in each app's `COPY --from`. Dependabot doesn't track it, and Debian security updates don't cover it.
+
 ## Pull access
 
-The package is private. In its package settings, grant read access to the app repositories so their workflows can pull with `GITHUB_TOKEN`. Kamal hosts and builders log in to `ghcr.io` with a token that has `read:packages`.
+The packages are private. In the package settings of `ruby` and `ruby-ghostscript`, grant read access to the app repositories so their workflows can pull with `GITHUB_TOKEN`. Kamal hosts and builders log in to `ghcr.io` with a token that has `read:packages`.
 
 ## Tests
 
@@ -52,4 +68,4 @@ The package is private. In its package settings, grant read access to the app re
 test/run.sh 3.4.12
 ```
 
-Builds both images locally for `linux/amd64` and checks their contents, including a native gem compiled in the build image and loaded in the runtime image.
+Builds the images locally for `linux/amd64` and checks their contents, including a native gem compiled in the build image and loaded in the runtime image, and Ghostscript copied into the runtime image as described above.

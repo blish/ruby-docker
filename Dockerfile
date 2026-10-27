@@ -4,10 +4,35 @@
 # Shared base images for Rails production builds.
 #   --target runtime  ghcr.io/blish/ruby:<ruby>        final stage of app images
 #   --target build    ghcr.io/blish/ruby:<ruby>-build  gem install and asset precompile
+#   --target ghostscript  ghcr.io/blish/ruby-ghostscript:<version>  opt-in, see README
 ARG RUBY_VERSION
 
 # Node LTS for asset precompile; Dependabot bumps minor and patch versions of this tag.
 FROM docker.io/library/node:24.22.1-trixie-slim AS node
+
+# Ghostscript for ZUGFeRD invoice PDFs. Debian trixie ships 10.05.1, whose ZUGFeRD embedding
+# PDFBox can't read; 10.06+ is needed. Not part of runtime: apps that need it copy the
+# `ghostscript` image's /usr/local into their final stage.
+# Releases: https://github.com/ArtifexSoftware/ghostpdl-downloads/releases
+FROM docker.io/library/debian:trixie-slim AS ghostscript-build
+ARG GHOSTSCRIPT_VERSION=10.08.0
+ARG GHOSTSCRIPT_TAG=gs10080
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y build-essential ca-certificates curl && \
+    cd /tmp && \
+    curl -fsSLO "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/${GHOSTSCRIPT_TAG}/ghostscript-${GHOSTSCRIPT_VERSION}.tar.gz" && \
+    curl -fsSLO "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/${GHOSTSCRIPT_TAG}/SHA512SUMS" && \
+    grep " ghostscript-${GHOSTSCRIPT_VERSION}.tar.gz\$" SHA512SUMS | sha512sum -c - && \
+    tar xzf "ghostscript-${GHOSTSCRIPT_VERSION}.tar.gz" && \
+    cd "ghostscript-${GHOSTSCRIPT_VERSION}" && \
+    ./configure --without-x --disable-cups --disable-gtk --disable-dbus --disable-fontconfig \
+      --without-tesseract --without-libidn --without-libpaper && \
+    make -j"$(nproc)" && \
+    make install DESTDIR=/ghostscript && \
+    rm -rf /ghostscript/usr/local/share/man /ghostscript/usr/local/share/doc
+
+FROM scratch AS ghostscript
+COPY --from=ghostscript-build /ghostscript/usr/local/ /usr/local/
 
 FROM docker.io/library/ruby:${RUBY_VERSION}-slim-trixie AS runtime
 

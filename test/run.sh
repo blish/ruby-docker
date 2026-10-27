@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# Builds the runtime and build images for one Ruby version and asserts their contents.
+# Builds the runtime, build and ghostscript images for one Ruby version and asserts their contents.
 # Usage: test/run.sh <ruby-version>
 set -uo pipefail
 
 ruby="${1:?usage: test/run.sh <ruby-version>}"
+ghostscript="$(grep -oE 'GHOSTSCRIPT_VERSION=[0-9.]+' "$(dirname "$0")/../Dockerfile" | cut -d= -f2)"
 node="$(grep -oE 'library/node:[0-9.]+' "$(dirname "$0")/../Dockerfile" | cut -d: -f2)"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 base="ruby-docker-test"
 runtime="$base:$ruby"
 build="$base:$ruby-build"
+with_ghostscript="$base:$ruby-ghostscript"
 platform="linux/amd64"
 failures=0
 
@@ -36,11 +38,14 @@ equals() {
   report "$1" $?
 }
 
-for target in runtime build; do
-  tag="$runtime"; [ "$target" = build ] && tag="$build"
+for target in runtime build ghostscript; do
+  tag="$base:$ruby"; [ "$target" = build ] && tag="$build"; [ "$target" = ghostscript ] && tag="$base:ghostscript"
   docker build --quiet --platform "$platform" --build-arg RUBY_VERSION="$ruby" \
     --target "$target" -t "$tag" "$root" >/dev/null || { echo "not ok - build $target"; exit 1; }
 done
+# Runtime with Ghostscript copied in, the way apps opt in.
+docker build --quiet --platform "$platform" --build-arg RUBY_VERSION="$ruby" --build-arg BASE="$base" \
+  -t "$with_ghostscript" "$root/test/ghostscript" >/dev/null || { echo "not ok - build ghostscript opt-in"; exit 1; }
 
 equals "runtime: ruby version" "$runtime" "ruby -e 'print RUBY_VERSION'" "$ruby"
 check "runtime: debian trixie" "$runtime" "grep -q VERSION_CODENAME=trixie /etc/os-release"
@@ -63,11 +68,18 @@ equals "runtime: imagemagick works" "$runtime" \
   "convert -size 1x1 xc:red /tmp/a.png && identify -format %m /tmp/a.png" "PNG"
 equals "runtime: svg identified as svg" "$runtime" \
   "echo '<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"/>' > /tmp/a.svg && identify -format %m /tmp/a.svg" "SVG"
+check "runtime: no ghostscript" "$runtime" "! command -v gs"
 check_as 0 "runtime: debian packages up to date" "$runtime" \
   'apt-get update -qq && [ -z "$(apt list --upgradable 2>/dev/null | tail -n +2)" ]'
 check "runtime: apt lists cleaned" "$runtime" 'test -z "$(ls -A /var/lib/apt/lists 2>/dev/null)"'
 [ "$(docker image inspect -f '{{json .Config.Entrypoint}} {{json .Config.ExposedPorts}}' "$runtime")" = "null null" ]
 report "runtime: no entrypoint/expose" $?
+
+equals "ghostscript: version" "$with_ghostscript" "gs --version" "$ghostscript"
+equals "ghostscript: path" "$with_ghostscript" "command -v gs" "/usr/local/bin/gs"
+check "ghostscript: libraries" "$with_ghostscript" '! ldd /usr/local/bin/gs | grep -q "not found"'
+check "ghostscript: writes pdf" "$with_ghostscript" \
+  "gs -q -dBATCH -dNOPAUSE -sDEVICE=pdfwrite -o /tmp/a.pdf -c showpage && head -c 5 /tmp/a.pdf | grep -q %PDF-"
 
 equals "build: node version" "$build" "node --version" "v$node"
 check "build: npm" "$build" "npm --version"
