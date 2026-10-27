@@ -27,7 +27,7 @@ Ruby versions: 3.4.12, 4.0.9. The list lives in the matrices of `.github/workflo
 ## App Dockerfile
 
 ```dockerfile
-ARG RUBY_VERSION=3.4.9
+ARG RUBY_VERSION=3.4.12
 FROM ghcr.io/blish/ruby:${RUBY_VERSION}-build AS build
 WORKDIR /rails
 COPY Gemfile Gemfile.lock .ruby-version ./
@@ -49,7 +49,7 @@ The package is private. In its package settings, grant read access to the app re
 ## Tests
 
 ```sh
-test/run.sh 3.4.9
+test/run.sh 3.4.12
 ```
 
 Builds both images locally for `linux/amd64` and checks their contents, including a native gem compiled in the build image and loaded in the runtime image.

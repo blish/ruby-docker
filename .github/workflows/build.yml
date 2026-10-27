@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ruby: ["3.4.9", "4.0.6"]
+        ruby: ["3.4.12", "4.0.9"]
     env:
       IMAGE: ghcr.io/blish/ruby
       PUSH: ${{ github.ref == 'refs/heads/main' }}
