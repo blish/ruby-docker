@@ -4,7 +4,7 @@
 set -uo pipefail
 
 ruby="${1:?usage: test/run.sh <ruby-version>}"
-node="24.22.1"
+node="$(grep -oE 'library/node:[0-9.]+' "$(dirname "$0")/../Dockerfile" | cut -d: -f2)"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 base="ruby-docker-test"
 runtime="$base:$ruby"
@@ -73,7 +73,11 @@ equals "build: node path" "$build" "command -v node" "/usr/local/node/bin/node"
 check "build: toolchain" "$build" "command -v gcc make git pkg-config python && dpkg -s libpq-dev libyaml-dev"
 check "build: single node" "$build" "! test -e /usr/bin/node && ! dpkg -s nodejs"
 check "build: npm node-gyp" "$build" 'test -f "$(npm prefix -g)/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js"'
-check "build: no corepack/pnpm/yarn" "$build" "! command -v corepack && ! command -v pnpm && ! command -v yarn"
+check "build: corepack" "$build" "corepack --version && command -v pnpm yarn"
+equals "build: pnpm via packageManager" "$build" \
+  "cd \$(mktemp -d) && echo '{\"packageManager\":\"pnpm@10.8.0\"}' > package.json && pnpm --version" "10.8.0"
+equals "build: yarn via packageManager" "$build" \
+  "cd \$(mktemp -d) && echo '{\"packageManager\":\"yarn@1.22.22\"}' > package.json && yarn --version" "1.22.22"
 check "build: inherits runtime env" "$build" \
   "env | grep -qx BUNDLE_PATH=/usr/local/bundle && env | grep -qx LD_PRELOAD=/usr/local/lib/libjemalloc.so"
 equals "build: runs as root" "$build" "id -u" "0"

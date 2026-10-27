@@ -19,10 +19,10 @@ Ruby versions: 3.4.12, 4.0.9. The list lives in the matrices of `.github/workflo
 
 **Build** (runtime +):
 - `build-essential git libpq-dev libyaml-dev pkg-config python-is-python3`
-- Node 24 LTS in `/usr/local/node/bin`, without corepack
+- Node 24 LTS (from the official `node` image) in `/usr/local/node/bin`, with corepack enabled: `pnpm` and `yarn` use the version from the app's `packageManager` field in `package.json`
 - runs as root
 
-**Left to the app:** `WORKDIR`, `ENTRYPOINT`/`CMD`/`EXPOSE`, the JS package manager (pnpm/yarn), app-specific packages, gem credentials (use build secrets). Apps installing extra packages in the runtime stage wrap them in `USER root` … `USER 1000:1000`.
+**Left to the app:** `WORKDIR`, `ENTRYPOINT`/`CMD`/`EXPOSE`, the JS package manager and its version (`packageManager` in `package.json`), app-specific packages, gem credentials (use build secrets). Apps installing extra packages in the runtime stage wrap them in `USER root` … `USER 1000:1000`.
 
 ## App Dockerfile
 
@@ -30,7 +30,6 @@ Ruby versions: 3.4.12, 4.0.9. The list lives in the matrices of `.github/workflo
 ARG RUBY_VERSION=3.4.9
 FROM ghcr.io/blish/ruby:${RUBY_VERSION}-build AS build
 WORKDIR /rails
-RUN npm install -g pnpm@10.8.0
 COPY Gemfile Gemfile.lock .ruby-version ./
 RUN --mount=type=secret,id=BUNDLE_GITHUB__COM,env=BUNDLE_GITHUB__COM bundle install
 COPY . .

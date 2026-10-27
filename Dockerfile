@@ -5,6 +5,10 @@
 #   --target runtime  ghcr.io/blish/ruby:<ruby>        final stage of app images
 #   --target build    ghcr.io/blish/ruby:<ruby>-build  gem install and asset precompile
 ARG RUBY_VERSION
+
+# Node LTS for asset precompile; Dependabot bumps minor and patch versions of this tag.
+FROM docker.io/library/node:24.22.1-trixie-slim AS node
+
 FROM docker.io/library/ruby:${RUBY_VERSION}-slim-trixie AS runtime
 
 # Install base packages and enable jemalloc for reduced memory usage and latency.
@@ -35,14 +39,15 @@ RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y build-essential git libpq-dev libyaml-dev pkg-config python-is-python3 && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
-# Node LTS for asset precompile; the JS package manager is installed by each app.
-ARG NODE_VERSION=24.22.1
-ENV PATH=/usr/local/node/bin:$PATH
-RUN cd /tmp && \
-    curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz" && \
-    curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt" && \
-    grep " node-v${NODE_VERSION}-linux-x64.tar.gz\$" SHASUMS256.txt | sha256sum -c - && \
-    mkdir -p /usr/local/node && \
-    tar xzf "node-v${NODE_VERSION}-linux-x64.tar.gz" -C /usr/local/node --strip-components=1 && \
-    rm -f /usr/local/node/bin/corepack && \
-    rm -f "node-v${NODE_VERSION}-linux-x64.tar.gz" SHASUMS256.txt
+# Node, npm and corepack. Corepack provides pnpm and yarn shims; each app pins its package
+# manager via `packageManager` in package.json. Node 25+ no longer bundles corepack: with the
+# next LTS, install it via `npm install -g corepack` instead of copying it.
+COPY --from=node /usr/local/bin/node /usr/local/node/bin/node
+COPY --from=node /usr/local/lib/node_modules/npm /usr/local/node/lib/node_modules/npm
+COPY --from=node /usr/local/lib/node_modules/corepack /usr/local/node/lib/node_modules/corepack
+ENV PATH=/usr/local/node/bin:$PATH \
+    COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/node/bin/npm && \
+    ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/node/bin/npx && \
+    ln -s ../lib/node_modules/corepack/dist/corepack.js /usr/local/node/bin/corepack && \
+    corepack enable --install-directory /usr/local/node/bin
