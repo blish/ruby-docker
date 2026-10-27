@@ -61,6 +61,8 @@ equals "runtime: no workdir" "$runtime" "pwd" "/"
 check "runtime: no node/gcc" "$runtime" "! command -v node && ! command -v gcc"
 equals "runtime: imagemagick works" "$runtime" \
   "convert -size 1x1 xc:red /tmp/a.png && identify -format %m /tmp/a.png" "PNG"
+equals "runtime: svg identified as svg" "$runtime" \
+  "echo '<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"/>' > /tmp/a.svg && identify -format %m /tmp/a.svg" "SVG"
 check_as 0 "runtime: debian packages up to date" "$runtime" \
   'apt-get update -qq && [ -z "$(apt list --upgradable 2>/dev/null | tail -n +2)" ]'
 check "runtime: apt lists cleaned" "$runtime" 'test -z "$(ls -A /var/lib/apt/lists 2>/dev/null)"'

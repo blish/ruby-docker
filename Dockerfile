@@ -13,9 +13,12 @@ FROM docker.io/library/ruby:${RUBY_VERSION}-slim-trixie AS runtime
 
 # Install base packages and enable jemalloc for reduced memory usage and latency.
 # The upgrade applies Debian security patches the upstream ruby tag may not have picked up yet.
+# libmagickcore-*-extra ships ImageMagick's built-in SVG coder, so `identify` reports SVGs
+# correctly. Without it SVGs go through the rsvg-convert delegate, are identified as PNG,
+# and Alchemy rasterizes them on upload.
 RUN apt-get update -qq && \
     apt-get upgrade -y && \
-    apt-get install --no-install-recommends -y curl libjemalloc2 imagemagick postgresql-client file && \
+    apt-get install --no-install-recommends -y curl libjemalloc2 imagemagick libmagickcore-7.q16-10-extra postgresql-client file && \
     ln -s /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 

@@ -12,7 +12,7 @@ Ruby versions: 3.4.12, 4.0.9. The list lives in the matrices of `.github/workflo
 ## Contents
 
 **Runtime** (`ruby:<ruby>-slim-trixie`):
-- `curl libjemalloc2 imagemagick postgresql-client file`
+- `curl libjemalloc2 imagemagick libmagickcore-7.q16-10-extra postgresql-client file` (the `-extra` package adds ImageMagick's built-in SVG coder)
 - jemalloc enabled via `LD_PRELOAD`
 - `RAILS_ENV=production`, `BUNDLE_DEPLOYMENT=1`, `BUNDLE_PATH=/usr/local/bundle`, `BUNDLE_WITHOUT=development`
 - runs as user `rails` (UID/GID 1000)
