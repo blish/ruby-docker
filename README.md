@@ -14,7 +14,7 @@ Ruby versions: 3.4.12, 4.0.9. The list lives in the matrices of `.github/workflo
 
 **Runtime** (`ruby:<ruby>-slim-trixie`):
 - `curl file imagemagick libjemalloc2 libmagickcore-7.q16-10-extra postgresql-client` (the `-extra` package adds ImageMagick's built-in SVG coder)
-- jemalloc enabled via `LD_PRELOAD`
+- jemalloc enabled via `LD_PRELOAD` and tuned via `MALLOC_CONF` (2 arenas, background purging, no transparent huge pages); `MAGICK_THREAD_LIMIT=1`. Apps can override both at runtime
 - `RAILS_ENV=production`, `BUNDLE_DEPLOYMENT=1`, `BUNDLE_PATH=/usr/local/bundle`, `BUNDLE_WITHOUT=development`
 - runs as user `rails` (UID/GID 1000)
 

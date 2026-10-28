@@ -55,10 +55,14 @@ check "runtime: env" "$runtime" 'env | grep -qx RAILS_ENV=production &&
   env | grep -qx BUNDLE_DEPLOYMENT=1 &&
   env | grep -qx BUNDLE_PATH=/usr/local/bundle &&
   env | grep -qx BUNDLE_WITHOUT=development &&
-  env | grep -qx LD_PRELOAD=/usr/local/lib/libjemalloc.so'
+  env | grep -qx LD_PRELOAD=libjemalloc.so.2 &&
+  env | grep -qx MALLOC_CONF=narenas:2,background_thread:true,thp:never,dirty_decay_ms:1000,muzzy_decay_ms:0 &&
+  env | grep -qx MAGICK_THREAD_LIMIT=1'
 jemalloc='ruby -e "exit File.read(%(/proc/self/maps)).include?(%(jemalloc))"'
 check "runtime: jemalloc" "$runtime" "$jemalloc"
 check_as 1000 "runtime: jemalloc as uid 1000" "$runtime" "$jemalloc"
+check "runtime: jemalloc uses 2 arenas" "$runtime" \
+  'MALLOC_CONF="$MALLOC_CONF,stats_print:true" ruby -e0 2>&1 | grep -Eq "opt.narenas: 2\$"'
 equals "runtime: rails user" "$runtime" "id rails" "uid=1000(rails) gid=1000(rails) groups=1000(rails)"
 check "runtime: rails home+shell" "$runtime" "getent passwd rails | grep -q ':/home/rails:/bin/bash\$'"
 equals "runtime: runs as uid 1000" "$runtime" "id -u" "1000"
@@ -93,7 +97,7 @@ equals "build: pnpm via packageManager" "$build" \
 equals "build: yarn via packageManager" "$build" \
   "cd \$(mktemp -d) && echo '{\"packageManager\":\"yarn@1.22.22\"}' > package.json && yarn --version" "1.22.22"
 check "build: inherits runtime env" "$build" \
-  "env | grep -qx BUNDLE_PATH=/usr/local/bundle && env | grep -qx LD_PRELOAD=/usr/local/lib/libjemalloc.so"
+  "env | grep -qx BUNDLE_PATH=/usr/local/bundle && env | grep -qx LD_PRELOAD=libjemalloc.so.2"
 equals "build: runs as root" "$build" "id -u" "0"
 
 docker build --platform "$platform" --build-arg RUBY_VERSION="$ruby" --build-arg BASE="$base" \
