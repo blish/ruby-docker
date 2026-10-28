@@ -7,25 +7,26 @@
 #   --target ghostscript  ghcr.io/blish/ruby-ghostscript:<version>  opt-in, see README
 ARG RUBY_VERSION
 
+# Base images other than ruby are pinned by digest; Dependabot updates tag and digest.
 # Node LTS for asset precompile; Dependabot bumps minor and patch versions of this tag.
-FROM docker.io/library/node:24.22.1-trixie-slim AS node
+FROM docker.io/library/node:24.22.1-trixie-slim@sha256:89c5244bc22a9bc3287d89ebc7e49b9cb5bb84cd40e6175ac3421d5a9f68b95a AS node
 
 # Ghostscript for ZUGFeRD invoice PDFs. Debian trixie ships 10.05.1, whose ZUGFeRD embedding
 # PDFBox can't read; 10.06+ is needed. Not part of runtime: apps that need it copy the
 # `ghostscript` image's /usr/local into their final stage.
 # Releases: https://github.com/ArtifexSoftware/ghostpdl-downloads/releases
-FROM docker.io/library/debian:trixie-slim AS ghostscript-build
+# To update, bump version, tag and the tarball's sha256 together.
+FROM docker.io/library/debian:trixie-slim@sha256:89c1ea91e897f0fe0a3731595330bc45b8bdef4047464a07116f891a94054b31 AS ghostscript-build
 ARG GHOSTSCRIPT_VERSION=10.08.0
 ARG GHOSTSCRIPT_TAG=gs10080
+ADD --checksum=sha256:caf199e3f233f1290b27d0972d636f66c303355f2353309b7bfddf1edda06b3d \
+    https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/${GHOSTSCRIPT_TAG}/ghostscript-${GHOSTSCRIPT_VERSION}.tar.gz /tmp/
 RUN apt-get update -qq && \
-    apt-get install --no-install-recommends -y build-essential ca-certificates curl && \
-    cd /tmp && \
-    curl -fsSLO "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/${GHOSTSCRIPT_TAG}/ghostscript-${GHOSTSCRIPT_VERSION}.tar.gz" && \
-    curl -fsSLO "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/${GHOSTSCRIPT_TAG}/SHA512SUMS" && \
-    grep " ghostscript-${GHOSTSCRIPT_VERSION}.tar.gz\$" SHA512SUMS | sha512sum -c - && \
-    tar xzf "ghostscript-${GHOSTSCRIPT_VERSION}.tar.gz" && \
-    cd "ghostscript-${GHOSTSCRIPT_VERSION}" && \
-    ./configure --without-x --disable-cups --disable-gtk --disable-dbus --disable-fontconfig \
+    apt-get install --no-install-recommends -y \
+      build-essential && \
+    tar xzf "/tmp/ghostscript-${GHOSTSCRIPT_VERSION}.tar.gz" -C /tmp
+WORKDIR /tmp/ghostscript-${GHOSTSCRIPT_VERSION}
+RUN ./configure --without-x --disable-cups --disable-gtk --disable-dbus --disable-fontconfig \
       --without-tesseract --without-libidn --without-libpaper && \
     make -j"$(nproc)" && \
     make install DESTDIR=/ghostscript && \
@@ -43,7 +44,13 @@ FROM docker.io/library/ruby:${RUBY_VERSION}-slim-trixie AS runtime
 # and Alchemy rasterizes them on upload.
 RUN apt-get update -qq && \
     apt-get upgrade -y && \
-    apt-get install --no-install-recommends -y curl libjemalloc2 imagemagick libmagickcore-7.q16-10-extra postgresql-client file && \
+    apt-get install --no-install-recommends -y \
+      curl \
+      file \
+      imagemagick \
+      libjemalloc2 \
+      libmagickcore-7.q16-10-extra \
+      postgresql-client && \
     ln -s /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
@@ -55,7 +62,7 @@ ENV RAILS_ENV="production" \
 
 # Run as non-root by default; apps installing extra packages switch to `USER root` and back.
 RUN groupadd --system --gid 1000 rails && \
-    useradd rails --uid 1000 --gid 1000 --create-home --shell /bin/bash
+    useradd rails --uid 1000 --gid 1000 --no-log-init --create-home --shell /bin/bash
 USER 1000:1000
 
 FROM runtime AS build
@@ -64,7 +71,13 @@ USER root
 # Install packages needed to build gems and node modules.
 # No Debian node-gyp: it pulls in Debian's nodejs; npm bundles its own node-gyp.
 RUN apt-get update -qq && \
-    apt-get install --no-install-recommends -y build-essential git libpq-dev libyaml-dev pkg-config python-is-python3 && \
+    apt-get install --no-install-recommends -y \
+      build-essential \
+      git \
+      libpq-dev \
+      libyaml-dev \
+      pkg-config \
+      python-is-python3 && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
 # Node, npm and corepack. Corepack provides pnpm and yarn shims; each app pins its package
