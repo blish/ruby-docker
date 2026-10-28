@@ -15,7 +15,7 @@ FROM docker.io/library/node:24.22.1-trixie-slim@sha256:89c5244bc22a9bc3287d89ebc
 # PDFBox can't read; 10.06+ is needed. Not part of runtime: apps that need it copy the
 # `ghostscript` image's /usr/local into their final stage.
 # Releases: https://github.com/ArtifexSoftware/ghostpdl-downloads/releases
-# To update, bump version, tag and the tarball's sha256 together.
+# Updated by bin/update-ghostscript (weekly via .github/workflows/update-ghostscript.yml).
 FROM docker.io/library/debian:trixie-slim@sha256:89c1ea91e897f0fe0a3731595330bc45b8bdef4047464a07116f891a94054b31 AS ghostscript-build
 ARG GHOSTSCRIPT_VERSION=10.08.0
 ARG GHOSTSCRIPT_TAG=gs10080

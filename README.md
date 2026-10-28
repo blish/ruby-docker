@@ -13,7 +13,7 @@ Ruby versions: 3.4.12, 4.0.9. The list lives in the matrices of `.github/workflo
 ## Contents
 
 **Runtime** (`ruby:<ruby>-slim-trixie`):
-- `curl libjemalloc2 imagemagick libmagickcore-7.q16-10-extra postgresql-client file` (the `-extra` package adds ImageMagick's built-in SVG coder)
+- `curl file imagemagick libjemalloc2 libmagickcore-7.q16-10-extra postgresql-client` (the `-extra` package adds ImageMagick's built-in SVG coder)
 - jemalloc enabled via `LD_PRELOAD`
 - `RAILS_ENV=production`, `BUNDLE_DEPLOYMENT=1`, `BUNDLE_PATH=/usr/local/bundle`, `BUNDLE_WITHOUT=development`
 - runs as user `rails` (UID/GID 1000)
@@ -56,7 +56,7 @@ COPY --from=ghcr.io/blish/ruby-ghostscript:10.08.0 /usr/local/ /usr/local/
 
 This adds `/usr/local/bin/gs` and its resources in `/usr/local/share/ghostscript`. Nothing is compiled in the app.
 
-To update Ghostscript, bump `GHOSTSCRIPT_VERSION`, `GHOSTSCRIPT_TAG` and the tarball's sha256 in `ADD --checksum` in the `Dockerfile` (`sha256sum ghostscript-<version>.tar.gz`, after verifying the download against the release's `SHA512SUMS`) ([releases](https://github.com/ArtifexSoftware/ghostpdl-downloads/releases)), then the version in each app's `COPY --from`. Dependabot doesn't track it, and Debian security updates don't cover it.
+Ghostscript isn't tracked by Dependabot or covered by Debian security updates. Instead, `.github/workflows/update-ghostscript.yml` checks for a new release every Monday and has blish-bot open a PR. To update manually, run `bin/update-ghostscript` (needs an authenticated `gh`): it bumps `GHOSTSCRIPT_VERSION`, `GHOSTSCRIPT_TAG` and the sha256 in `ADD --checksum` after verifying the tarball against the release's `SHA512SUMS`. After merging, bump the version in each app's `COPY --from`.
 
 ## Pull access
 
@@ -68,4 +68,4 @@ The packages are private. In the package settings of `ruby` and `ruby-ghostscrip
 test/run.sh 3.4.12
 ```
 
-Builds the images locally for `linux/amd64` and checks their contents, including a native gem compiled in the build image and loaded in the runtime image, and Ghostscript copied into the runtime image as described above.
+Builds the images locally for `linux/amd64` and checks their contents, including a native gem compiled in the build image and loaded in the runtime image, and Ghostscript copied into the runtime image as described above. Needs network access: the corepack checks download pnpm and yarn.

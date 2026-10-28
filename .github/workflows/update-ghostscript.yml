@@ -1,0 +1,64 @@
+name: Update Ghostscript
+
+# Dependabot can't track Ghostscript (a release tarball pinned by checksum), so blish-bot
+# opens the update PR instead.
+on:
+  schedule:
+    # The job runs every Monday 03:45 UTC
+    - cron: "45 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.BLISH_BOT_APP_ID }}
+          private-key: ${{ secrets.BLISH_BOT_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.token.outputs.token }}
+
+      - id: update
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: bin/update-ghostscript
+
+      - if: steps.update.outputs.version != ''
+        name: Open a PR
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          BOT: ${{ steps.token.outputs.app-slug }}[bot]
+          CURRENT: ${{ steps.update.outputs.current }}
+          VERSION: ${{ steps.update.outputs.version }}
+          TAG: ${{ steps.update.outputs.tag }}
+        run: |
+          branch="update-ghostscript-$VERSION"
+          if git ls-remote --exit-code --heads origin "$branch" > /dev/null; then
+            echo "$branch already exists"; exit 0
+          fi
+
+          git config user.name "$BOT"
+          git config user.email "$(gh api "/users/$BOT" --jq .id)+$BOT@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -a \
+            -m "chore: Update Ghostscript to $VERSION" \
+            -m "Updates Ghostscript from $CURRENT to $VERSION." \
+            -m "Release notes: https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/tag/$TAG"
+          git push origin "$branch"
+          gh pr create --head "$branch" --title "Update Ghostscript to $VERSION" --body "$(cat <<EOF
+          Updates Ghostscript from $CURRENT to $VERSION ([release notes](https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/tag/$TAG)).
+
+          The tarball was verified against the release's \`SHA512SUMS\`; its sha256 is pinned in \`ADD --checksum\`.
+
+          After merging, bump \`ruby-ghostscript:$CURRENT\` to \`ruby-ghostscript:$VERSION\` in the apps that use it.
+          EOF
+          )"
