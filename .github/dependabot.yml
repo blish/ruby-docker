@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # Stay on the LTS line; the next LTS major is a deliberate change.
+      - dependency-name: "*node"
+        update-types: ["version-update:semver-major"]
