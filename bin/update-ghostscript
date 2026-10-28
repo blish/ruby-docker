@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Updates Ghostscript in ./Dockerfile and ./README.md to the latest release, verified against
+# Updates Ghostscript in ./ghostscript/Dockerfile and ./README.md to the latest release, verified against
 # the release's SHA512SUMS. Leaves the files untouched if they're already up to date.
 # Writes current, version and tag to $GITHUB_OUTPUT when run in GitHub Actions.
 # Usage: bin/update-ghostscript   (requires an authenticated gh CLI)
@@ -10,7 +10,7 @@ latest=repos/ArtifexSoftware/ghostpdl-downloads/releases/latest
 
 tag="$(gh api "$latest" --jq .tag_name)"
 version="$(gh api "$latest" --jq '.assets[].name' | sed -nE 's/^ghostscript-([0-9.]+)\.tar\.gz$/\1/p')"
-current="$(grep -oE 'GHOSTSCRIPT_VERSION=[0-9.]+' Dockerfile | cut -d= -f2)"
+current="$(grep -oE 'GHOSTSCRIPT_VERSION=[0-9.]+' ghostscript/Dockerfile | cut -d= -f2)"
 
 newest="$(printf '%s\n' "$current" "$version" | sort -V | tail -n 1)"
 if [ "$version" = "$current" ] || [ "$newest" != "$version" ]; then
@@ -29,7 +29,7 @@ sed -i -E \
   -e "s/GHOSTSCRIPT_VERSION=[0-9.]+/GHOSTSCRIPT_VERSION=$version/" \
   -e "s/GHOSTSCRIPT_TAG=gs[0-9]+/GHOSTSCRIPT_TAG=$tag/" \
   -e "s/(--checksum=sha256:)[0-9a-f]{64}/\1$sha256/" \
-  Dockerfile
+  ghostscript/Dockerfile
 sed -i "s/ruby-ghostscript:$current/ruby-ghostscript:$version/g" README.md
 
 echo "Updated Ghostscript from $current to $version ($tag)"

@@ -1,51 +1,19 @@
 #!/usr/bin/env bash
-# Builds the runtime, build and ghostscript images for one Ruby version and asserts their contents.
+# Builds the runtime and build images for one Ruby version and asserts their contents.
 # Usage: test/run.sh <ruby-version>
 set -uo pipefail
+source "$(dirname "$0")/lib.sh"
 
 ruby="${1:?usage: test/run.sh <ruby-version>}"
-ghostscript="$(grep -oE 'GHOSTSCRIPT_VERSION=[0-9.]+' "$(dirname "$0")/../Dockerfile" | cut -d= -f2)"
-node="$(grep -oE 'library/node:[0-9.]+' "$(dirname "$0")/../Dockerfile" | cut -d: -f2)"
-root="$(cd "$(dirname "$0")/.." && pwd)"
-base="ruby-docker-test"
+node="$(grep -oE 'library/node:[0-9.]+' "$root/Dockerfile" | cut -d: -f2)"
 runtime="$base:$ruby"
 build="$base:$ruby-build"
-with_ghostscript="$base:$ruby-ghostscript"
-platform="linux/amd64"
-failures=0
 
-report() {
-  if [ "$2" -eq 0 ]; then echo "ok - $1"; else echo "not ok - $1"; failures=$((failures + 1)); fi
-}
-
-# @param name [String] assertion name
-# @param image [String] image to run
-# @param cmd [String] bash command; passes on exit 0
-check() {
-  docker run --rm --platform "$platform" "$2" bash -c "$3" >/dev/null 2>&1
-  report "$1" $?
-}
-
-# @param uid [Integer] user to run as
-check_as() {
-  docker run --rm --platform "$platform" --user "$1" "$3" bash -c "$4" >/dev/null 2>&1
-  report "$2" $?
-}
-
-# @param expected [String] exact stdout
-equals() {
-  [ "$(docker run --rm --platform "$platform" "$2" bash -c "$3" 2>/dev/null)" = "$4" ]
-  report "$1" $?
-}
-
-for target in runtime build ghostscript; do
-  tag="$base:$ruby"; [ "$target" = build ] && tag="$build"; [ "$target" = ghostscript ] && tag="$base:ghostscript"
+for target in runtime build; do
+  tag="$runtime"; [ "$target" = build ] && tag="$build"
   docker build --quiet --platform "$platform" --build-arg RUBY_VERSION="$ruby" \
     --target "$target" -t "$tag" "$root" >/dev/null || { echo "not ok - build $target"; exit 1; }
 done
-# Runtime with Ghostscript copied in, the way apps opt in.
-docker build --quiet --platform "$platform" --build-arg RUBY_VERSION="$ruby" --build-arg BASE="$base" \
-  -t "$with_ghostscript" "$root/test/ghostscript" >/dev/null || { echo "not ok - build ghostscript opt-in"; exit 1; }
 
 equals "runtime: ruby version" "$runtime" "ruby -e 'print RUBY_VERSION'" "$ruby"
 check "runtime: debian trixie" "$runtime" "grep -q VERSION_CODENAME=trixie /etc/os-release"
@@ -79,12 +47,6 @@ check "runtime: apt lists cleaned" "$runtime" 'test -z "$(ls -A /var/lib/apt/lis
 [ "$(docker image inspect -f '{{json .Config.Entrypoint}} {{json .Config.ExposedPorts}}' "$runtime")" = "null null" ]
 report "runtime: no entrypoint/expose" $?
 
-equals "ghostscript: version" "$with_ghostscript" "gs --version" "$ghostscript"
-equals "ghostscript: path" "$with_ghostscript" "command -v gs" "/usr/local/bin/gs"
-check "ghostscript: libraries" "$with_ghostscript" '! ldd /usr/local/bin/gs | grep -q "not found"'
-check "ghostscript: writes pdf" "$with_ghostscript" \
-  "gs -q -dBATCH -dNOPAUSE -sDEVICE=pdfwrite -o /tmp/a.pdf -c showpage && head -c 5 /tmp/a.pdf | grep -q %PDF-"
-
 equals "build: node version" "$build" "node --version" "v$node"
 check "build: npm" "$build" "npm --version"
 equals "build: node path" "$build" "command -v node" "/usr/local/node/bin/node"
@@ -104,4 +66,4 @@ docker build --platform "$platform" --build-arg RUBY_VERSION="$ruby" --build-arg
   --no-cache --progress plain "$root/test/e2e" 2>&1 | grep -E 'libpq|ERROR'
 report "e2e: pg gem" "${PIPESTATUS[0]}"
 
-[ "$failures" -eq 0 ] || { echo "$failures failed"; exit 1; }
+finish

@@ -4,36 +4,11 @@
 # Shared base images for Rails production builds.
 #   --target runtime  ghcr.io/blish/ruby:<ruby>        final stage of app images
 #   --target build    ghcr.io/blish/ruby:<ruby>-build  gem install and asset precompile
-#   --target ghostscript  ghcr.io/blish/ruby-ghostscript:<version>  opt-in, see README
 ARG RUBY_VERSION
 
-# Base images other than ruby are pinned by digest; Dependabot updates tag and digest.
+# The node image is pinned by digest; Dependabot updates tag and digest.
 # Node LTS for asset precompile; Dependabot bumps minor and patch versions of this tag.
 FROM docker.io/library/node:24.22.1-trixie-slim@sha256:89c5244bc22a9bc3287d89ebc7e49b9cb5bb84cd40e6175ac3421d5a9f68b95a AS node
-
-# Ghostscript for ZUGFeRD invoice PDFs. Debian trixie ships 10.05.1, whose ZUGFeRD embedding
-# PDFBox can't read; 10.06+ is needed. Not part of runtime: apps that need it copy the
-# `ghostscript` image's /usr/local into their final stage.
-# Releases: https://github.com/ArtifexSoftware/ghostpdl-downloads/releases
-# Updated by bin/update-ghostscript (weekly via .github/workflows/update-ghostscript.yml).
-FROM docker.io/library/debian:trixie-slim@sha256:89c1ea91e897f0fe0a3731595330bc45b8bdef4047464a07116f891a94054b31 AS ghostscript-build
-ARG GHOSTSCRIPT_VERSION=10.08.0
-ARG GHOSTSCRIPT_TAG=gs10080
-ADD --checksum=sha256:caf199e3f233f1290b27d0972d636f66c303355f2353309b7bfddf1edda06b3d \
-    https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/${GHOSTSCRIPT_TAG}/ghostscript-${GHOSTSCRIPT_VERSION}.tar.gz /tmp/
-RUN apt-get update -qq && \
-    apt-get install --no-install-recommends -y \
-      build-essential && \
-    tar xzf "/tmp/ghostscript-${GHOSTSCRIPT_VERSION}.tar.gz" -C /tmp
-WORKDIR /tmp/ghostscript-${GHOSTSCRIPT_VERSION}
-RUN ./configure --without-x --disable-cups --disable-gtk --disable-dbus --disable-fontconfig \
-      --without-tesseract --without-libidn --without-libpaper && \
-    make -j"$(nproc)" && \
-    make install DESTDIR=/ghostscript && \
-    rm -rf /ghostscript/usr/local/share/man /ghostscript/usr/local/share/doc
-
-FROM scratch AS ghostscript
-COPY --from=ghostscript-build /ghostscript/usr/local/ /usr/local/
 
 FROM docker.io/library/ruby:${RUBY_VERSION}-slim-trixie AS runtime
 
