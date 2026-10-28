@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  ruby:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -19,3 +19,10 @@ jobs:
 
       # Runs on the default docker driver, so the e2e build can use the freshly built local images.
       - run: test/run.sh ${{ matrix.ruby }}
+
+  ghostscript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - run: test/ghostscript.sh

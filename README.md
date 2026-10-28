@@ -56,7 +56,7 @@ COPY --from=ghcr.io/blish/ruby-ghostscript:10.08.0 /usr/local/ /usr/local/
 
 This adds `/usr/local/bin/gs` and its resources in `/usr/local/share/ghostscript`. Nothing is compiled in the app.
 
-Ghostscript isn't tracked by Dependabot or covered by Debian security updates. Instead, `.github/workflows/update-ghostscript.yml` checks for a new release every Monday and has blish-bot open a PR. To update manually, run `bin/update-ghostscript` (needs an authenticated `gh`): it bumps `GHOSTSCRIPT_VERSION`, `GHOSTSCRIPT_TAG` and the sha256 in `ADD --checksum` after verifying the tarball against the release's `SHA512SUMS`. After merging, bump the version in each app's `COPY --from`.
+Ghostscript isn't tracked by Dependabot or covered by Debian security updates. Instead, `.github/workflows/update-ghostscript.yml` checks for a new release every Monday and has blish-bot open a PR. To update manually, run `bin/update-ghostscript` (needs an authenticated `gh`): it bumps `GHOSTSCRIPT_VERSION`, `GHOSTSCRIPT_TAG` and the sha256 in `ADD --checksum` in `ghostscript/Dockerfile` after verifying the tarball against the release's `SHA512SUMS`. After merging, bump the version in each app's `COPY --from`.
 
 ## Pull access
 
@@ -65,7 +65,12 @@ The packages are private. In the package settings of `ruby` and `ruby-ghostscrip
 ## Tests
 
 ```sh
-test/run.sh 3.4.12
+test/run.sh 3.4.12        # runtime and build images
+test/ghostscript.sh       # Ghostscript image, copied into Debian trixie
 ```
 
-Builds the images locally for `linux/amd64` and checks their contents, including a native gem compiled in the build image and loaded in the runtime image, and Ghostscript copied into the runtime image as described above. Needs network access: the corepack checks download pnpm and yarn.
+`test/run.sh` builds the images locally for `linux/amd64` and checks their contents, including a native gem compiled in the build image and loaded in the runtime image. Needs network access: the corepack checks download pnpm and yarn.
+
+`test/ghostscript.sh` builds `ghostscript/`, copies it into `debian:trixie-slim` (the base of the ruby images) as described above and checks that `gs` works there.
+
+Both run on every PR as jobs of `test.yml`.
