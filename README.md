@@ -8,7 +8,7 @@ Shared base images for the Rails production Dockerfiles of base-app, website, bu
 | `ghcr.io/blish/ruby:<ruby>-build` | Build stage: `bundle install`, asset precompile |
 | `ghcr.io/blish/ruby-ghostscript:<version>` | Opt-in Ghostscript, see [Ghostscript](#ghostscript) |
 
-Ruby versions: 3.4.12, 4.0.9. The list lives in the matrices of `.github/workflows/test.yml` and `build.yml`; keep both in sync. All images are `linux/amd64` and are rebuilt on push to `main`, and without cache weekly and on manual dispatch (with `apt-get upgrade`).
+Ruby versions: 3.4.12, 4.0.9. The list lives in the matrix of `.github/workflows/build.yml`. All images are `linux/amd64`. The pipeline builds the images, tests exactly those images and pushes them only from `main`: on every push, and without cache weekly and on manual dispatch (with `apt-get upgrade`). On PRs it builds and tests without pushing.
 
 ## Contents
 
@@ -73,4 +73,4 @@ test/ghostscript.sh       # Ghostscript image, copied into Debian trixie
 
 `test/ghostscript.sh` builds `ghostscript/`, copies it into `debian:trixie-slim` (the base of the ruby images) as described above and checks that `gs` works there.
 
-Both run on every PR as jobs of `test.yml`.
+In CI, `build.yml` runs them against the images it just built (via `RUNTIME_IMAGE`/`BUILD_IMAGE` and `GHOSTSCRIPT_IMAGE`) before pushing.
