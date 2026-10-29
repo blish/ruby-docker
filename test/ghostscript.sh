@@ -2,15 +2,19 @@
 # Builds the Ghostscript image, copies it into Debian trixie the way apps opt in, and asserts
 # that gs works there.
 # Usage: test/ghostscript.sh
+# Set GHOSTSCRIPT_IMAGE to test an already built image instead (CI).
 set -uo pipefail
 source "$(dirname "$0")/lib.sh"
 
 ghostscript="$(grep -oE 'GHOSTSCRIPT_VERSION=[0-9.]+' "$root/ghostscript/Dockerfile" | cut -d= -f2)"
+ghostscript_image="${GHOSTSCRIPT_IMAGE:-$base:ghostscript}"
 image="$base:ghostscript-opt-in"
 
-docker build --quiet --platform "$platform" -t "$base:ghostscript" "$root/ghostscript" >/dev/null ||
-  { echo "not ok - build ghostscript"; exit 1; }
-docker build --quiet --platform "$platform" --build-arg BASE="$base" \
+if [ -z "${GHOSTSCRIPT_IMAGE:-}" ]; then
+  docker build --quiet --platform "$platform" -t "$ghostscript_image" "$root/ghostscript" >/dev/null ||
+    { echo "not ok - build ghostscript"; exit 1; }
+fi
+docker build --quiet --platform "$platform" --build-arg GHOSTSCRIPT_IMAGE="$ghostscript_image" \
   -t "$image" "$root/test/ghostscript" >/dev/null || { echo "not ok - build ghostscript opt-in"; exit 1; }
 
 equals "ghostscript: version" "$image" "gs --version" "$ghostscript"

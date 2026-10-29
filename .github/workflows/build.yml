@@ -1,6 +1,8 @@
 name: Build
 
+# Builds the images, tests exactly those images and pushes them on main.
 on:
+  pull_request:
   push:
     branches: [main]
   schedule:
@@ -13,24 +15,61 @@ permissions:
   contents: read
   packages: write
 
-jobs:
-  test:
-    uses: ./.github/workflows/test.yml
+env:
+  PUSH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
 
-  build-ruby:
-    needs: test
+jobs:
+  ruby:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         ruby: ["3.4.12", "4.0.9"]
     env:
-      IMAGE: ghcr.io/blish/ruby
-      PUSH: ${{ github.ref == 'refs/heads/main' }}
+      RUNTIME_IMAGE: ghcr.io/blish/ruby:${{ matrix.ruby }}
+      BUILD_IMAGE: ghcr.io/blish/ruby:${{ matrix.ruby }}-build
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # Not the default builder: the tests' own docker builds must see the loaded images.
+      - id: buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          use: false
+
+      - name: Build runtime image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          target: runtime
+          tags: ${{ env.RUNTIME_IMAGE }}
+          platforms: linux/amd64
+          build-args: RUBY_VERSION=${{ matrix.ruby }}
+          labels: org.opencontainers.image.source=https://github.com/blish/ruby-docker
+          load: true
+          pull: true
+          no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+          cache-from: type=gha,scope=${{ matrix.ruby }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.ruby }}
+
+      - name: Build build image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          target: build
+          tags: ${{ env.BUILD_IMAGE }}
+          platforms: linux/amd64
+          build-args: RUBY_VERSION=${{ matrix.ruby }}
+          labels: org.opencontainers.image.source=https://github.com/blish/ruby-docker
+          load: true
+          pull: true
+          # only rebuild the build stage, because runtime was cached in the step before
+          no-cache-filters: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'build' || '' }}
+          cache-from: type=gha,scope=${{ matrix.ruby }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.ruby }}
+
+      - name: Test
+        run: test/run.sh ${{ matrix.ruby }}
 
       - if: env.PUSH == 'true'
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
@@ -39,48 +78,42 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Runtime image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      - if: env.PUSH == 'true'
+        name: Push
+        run: |
+          docker push "$RUNTIME_IMAGE"
+          docker push "$BUILD_IMAGE"
+
+  # Opt-in Ghostscript image from ghostscript/Dockerfile, tagged with its pinned version.
+  ghostscript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - run: |
+          version="$(grep -oE 'GHOSTSCRIPT_VERSION=[0-9.]+' ghostscript/Dockerfile | cut -d= -f2)"
+          echo "GHOSTSCRIPT_IMAGE=ghcr.io/blish/ruby-ghostscript:$version" >> "$GITHUB_ENV"
+
+      # Not the default builder: the test's own docker build must see the loaded image.
+      - id: buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
-          target: runtime
-          tags: ${{ env.IMAGE }}:${{ matrix.ruby }}
-          platforms: linux/amd64
-          build-args: RUBY_VERSION=${{ matrix.ruby }}
-          labels: org.opencontainers.image.source=https://github.com/blish/ruby-docker
-          push: ${{ env.PUSH == 'true' }}
-          pull: true
-          no-cache: ${{ github.event_name != 'push' }}
-          cache-from: type=gha,scope=${{ matrix.ruby }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.ruby }}
+          use: false
 
       - name: Build image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          target: build
-          tags: ${{ env.IMAGE }}:${{ matrix.ruby }}-build
+          builder: ${{ steps.buildx.outputs.name }}
+          context: ghostscript
+          tags: ${{ env.GHOSTSCRIPT_IMAGE }}
           platforms: linux/amd64
-          build-args: RUBY_VERSION=${{ matrix.ruby }}
           labels: org.opencontainers.image.source=https://github.com/blish/ruby-docker
-          push: ${{ env.PUSH == 'true' }}
-          pull: true
-          # only rebuild the build stage, because runtime was cached in the step before
-          no-cache-filters: ${{ github.event_name != 'push' && 'build' || '' }}
-          cache-from: type=gha,scope=${{ matrix.ruby }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.ruby }}
+          load: true
+          cache-from: type=gha,scope=ghostscript
+          cache-to: type=gha,mode=max,scope=ghostscript
 
-  # Opt-in Ghostscript image from ghostscript/Dockerfile, tagged with its pinned version.
-  build-ghostscript:
-    needs: test
-    runs-on: ubuntu-latest
-    env:
-      PUSH: ${{ github.ref == 'refs/heads/main' }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - id: version
-        run: echo "version=$(grep -oE 'GHOSTSCRIPT_VERSION=[0-9.]+' ghostscript/Dockerfile | cut -d= -f2)" >> "$GITHUB_OUTPUT"
-
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Test
+        run: test/ghostscript.sh
 
       - if: env.PUSH == 'true'
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
@@ -89,12 +122,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: ghostscript
-          tags: ghcr.io/blish/ruby-ghostscript:${{ steps.version.outputs.version }}
-          platforms: linux/amd64
-          labels: org.opencontainers.image.source=https://github.com/blish/ruby-docker
-          push: ${{ env.PUSH == 'true' }}
-          cache-from: type=gha,scope=ghostscript
-          cache-to: type=gha,mode=max,scope=ghostscript
+      - if: env.PUSH == 'true'
+        name: Push
+        run: docker push "$GHOSTSCRIPT_IMAGE"
