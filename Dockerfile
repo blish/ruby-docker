@@ -8,7 +8,7 @@ ARG RUBY_VERSION
 
 # The node image is pinned by digest; Dependabot updates tag and digest.
 # Node LTS for asset precompile; Dependabot bumps minor and patch versions of this tag.
-FROM docker.io/library/node:24.22.2-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446 AS node
+FROM docker.io/library/node:24.22.2-trixie-slim@sha256:0820eaa85e07d0490446dd01d14707e17e6108a36988cf374899cd057eb3812d AS node
 
 FROM docker.io/library/ruby:${RUBY_VERSION}-slim-trixie AS runtime
 
