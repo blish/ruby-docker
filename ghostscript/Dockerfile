@@ -9,7 +9,7 @@
 # Releases: https://github.com/ArtifexSoftware/ghostpdl-downloads/releases
 # The debian image is pinned by digest; Dependabot updates it.
 # Updated by bin/update-ghostscript (weekly via .github/workflows/update-ghostscript.yml).
-FROM docker.io/library/debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS ghostscript-build
+FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS ghostscript-build
 ARG GHOSTSCRIPT_VERSION=10.08.0
 ARG GHOSTSCRIPT_TAG=gs10080
 ADD --checksum=sha256:caf199e3f233f1290b27d0972d636f66c303355f2353309b7bfddf1edda06b3d \
