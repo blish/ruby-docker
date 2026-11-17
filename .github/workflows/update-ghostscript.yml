@@ -54,7 +54,7 @@ jobs:
             -m "Updates Ghostscript from $CURRENT to $VERSION." \
             -m "Release notes: https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/tag/$TAG"
           git push origin "$branch"
-          gh pr create --head "$branch" --title "Update Ghostscript to $VERSION" --body "$(cat <<EOF
+          gh pr create --head "$branch" --label docker --title "Update Ghostscript to $VERSION" --body "$(cat <<EOF
           Updates Ghostscript from $CURRENT to $VERSION ([release notes](https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/tag/$TAG)).
 
           The tarball was verified against the release's \`SHA512SUMS\`; its sha256 is pinned in \`ADD --checksum\`.

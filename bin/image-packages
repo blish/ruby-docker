@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Prints the package versions of an image as sorted "<name> <version>" lines: Debian packages,
+# Ruby, gems and, if present, Node, npm and corepack. Input for bin/package-changes.
+# Usage: bin/image-packages <image>
+set -euo pipefail
+
+image="${1:?usage: bin/image-packages <image>}"
+
+docker run --rm --user root "$image" sh -c '
+  dpkg-query -W -f "\${Package} \${Version}\n"
+  ruby -e "puts \"ruby #{RUBY_VERSION}\"
+           Gem::Specification.group_by(&:name).each { |n, s| puts \"gem:#{n} #{s.map(&:version).sort.join(\",\")}\" }"
+  if command -v node >/dev/null; then
+    echo "node $(node -v | tr -d v)"
+    echo "npm $(npm -v)"
+    echo "corepack $(corepack -v)"
+  fi
+' | LC_ALL=C sort

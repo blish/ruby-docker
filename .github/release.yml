@@ -1,0 +1,9 @@
+# Groups the merged PRs in the notes of releases created by .github/workflows/build.yml.
+changelog:
+  categories:
+    - title: Image updates
+      labels: [docker]
+    - title: CI
+      labels: [github_actions]
+    - title: Other changes
+      labels: ["*"]
