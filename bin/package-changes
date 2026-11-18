@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Prints the differences between two bin/image-packages outputs as a Markdown list.
+# Prints nothing if both are equal.
+# Usage: bin/package-changes <old> <new>
+set -euo pipefail
+export LC_ALL=C
+
+old="${1:?usage: bin/package-changes <old> <new>}"
+new="${2:?usage: bin/package-changes <old> <new>}"
+
+join -a 1 -a 2 -e - -o 0,1.2,2.2 <(sort "$old") <(sort "$new") | awk '
+  $2 == $3 { next }
+  $2 == "-" { print "- `" $1 "` " $3 " (added)"; next }
+  $3 == "-" { print "- `" $1 "` " $2 " (removed)"; next }
+  { print "- `" $1 "` " $2 " → " $3 }
+'

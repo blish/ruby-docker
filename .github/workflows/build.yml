@@ -1,6 +1,7 @@
 name: Build
 
-# Builds the images, tests exactly those images and pushes them on main.
+# Builds the images and tests exactly those images. On main, it pushes the images that changed
+# since the latest release and publishes a new release for them (see "Releases" in README.md).
 on:
   pull_request:
   push:
@@ -15,11 +16,34 @@ permissions:
   contents: read
   packages: write
 
+# Runs on main one after another, so two runs never pick the same release tag.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
 env:
   PUSH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
 
 jobs:
+  # Picks the release tag up front, so the images can carry it in their tags and labels.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      previous: ${{ steps.version.outputs.previous }}
+      code-changed: ${{ steps.version.outputs.code-changed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Test release scripts
+        run: test/release.sh
+
+      - id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bin/release-version "$GITHUB_SHA" | tee -a "$GITHUB_OUTPUT"
+
   ruby:
+    needs: version
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -28,6 +52,13 @@ jobs:
     env:
       RUNTIME_IMAGE: ghcr.io/blish/ruby:${{ matrix.ruby }}
       BUILD_IMAGE: ghcr.io/blish/ruby:${{ matrix.ruby }}-build
+      RELEASE: ${{ needs.version.outputs.tag }}
+      PACKAGES: release/packages-ruby-${{ matrix.ruby }}.txt
+      LABELS: |
+        org.opencontainers.image.source=https://github.com/blish/ruby-docker
+        org.opencontainers.image.description=Ruby ${{ matrix.ruby }} base images for the Rails apps of blish
+        org.opencontainers.image.version=${{ needs.version.outputs.tag }}
+        org.opencontainers.image.url=https://github.com/blish/ruby-docker/releases/tag/${{ needs.version.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -45,7 +76,7 @@ jobs:
           tags: ${{ env.RUNTIME_IMAGE }}
           platforms: linux/amd64
           build-args: RUBY_VERSION=${{ matrix.ruby }}
-          labels: org.opencontainers.image.source=https://github.com/blish/ruby-docker
+          labels: ${{ env.LABELS }}
           load: true
           pull: true
           no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
@@ -60,7 +91,7 @@ jobs:
           tags: ${{ env.BUILD_IMAGE }}
           platforms: linux/amd64
           build-args: RUBY_VERSION=${{ matrix.ruby }}
-          labels: org.opencontainers.image.source=https://github.com/blish/ruby-docker
+          labels: ${{ env.LABELS }}
           load: true
           pull: true
           # only rebuild the build stage, because runtime was cached in the step before
@@ -71,27 +102,65 @@ jobs:
       - name: Test
         run: test/run.sh ${{ matrix.ruby }}
 
+      # The images only need a push if the code or one of their packages changed. The package list
+      # comes from the build image, which contains every package of the runtime image.
       - if: env.PUSH == 'true'
+        id: changes
+        name: Compare with the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIOUS: ${{ needs.version.outputs.previous }}
+          CODE_CHANGED: ${{ needs.version.outputs.code-changed }}
+        run: |
+          mkdir release
+          bin/image-packages "$BUILD_IMAGE" > "$PACKAGES"
+
+          changed="$CODE_CHANGED"
+          if [ "$changed" = false ]; then
+            gh release download "$PREVIOUS" --pattern "$(basename "$PACKAGES")" --dir previous
+            changes="$(bin/package-changes "previous/$(basename "$PACKAGES")" "$PACKAGES")"
+            [ -n "$changes" ] && changed=true
+          fi
+          echo "changed=$changed" | tee -a "$GITHUB_OUTPUT"
+
+      - if: steps.changes.outputs.changed == 'true'
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - if: env.PUSH == 'true'
+      # Pushes <ruby> and <ruby>-<release> (and the same for -build); records the digests for the release notes.
+      - if: steps.changes.outputs.changed == 'true'
         name: Push
         run: |
-          docker push "$RUNTIME_IMAGE"
-          docker push "$BUILD_IMAGE"
+          for image in "$RUNTIME_IMAGE" "$BUILD_IMAGE"; do
+            docker tag "$image" "$image-$RELEASE"
+            docker push "$image"
+            docker push "$image-$RELEASE"
+            echo "$image@$(docker inspect --format '{{index .RepoDigests 0}}' "$image" | cut -d@ -f2)"
+          done > release/images-ruby-${{ matrix.ruby }}.txt
+
+      # Always uploaded: every release attaches the package lists of all Ruby versions.
+      - if: env.PUSH == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-ruby-${{ matrix.ruby }}
+          path: release/
 
   # Opt-in Ghostscript image from ghostscript/Dockerfile, tagged with its pinned version.
+  # Its build is cached and only changes with the code, so it is only pushed then.
   ghostscript:
+    needs: version
     runs-on: ubuntu-latest
+    env:
+      PUSH_GHOSTSCRIPT: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && needs.version.outputs.code-changed == 'true' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - run: |
           version="$(grep -oE 'GHOSTSCRIPT_VERSION=[0-9.]+' ghostscript/Dockerfile | cut -d= -f2)"
+          echo "GHOSTSCRIPT_VERSION=$version" >> "$GITHUB_ENV"
           echo "GHOSTSCRIPT_IMAGE=ghcr.io/blish/ruby-ghostscript:$version" >> "$GITHUB_ENV"
 
       # Not the default builder: the test's own docker build must see the loaded image.
@@ -107,7 +176,11 @@ jobs:
           context: ghostscript
           tags: ${{ env.GHOSTSCRIPT_IMAGE }}
           platforms: linux/amd64
-          labels: org.opencontainers.image.source=https://github.com/blish/ruby-docker
+          labels: |
+            org.opencontainers.image.source=https://github.com/blish/ruby-docker
+            org.opencontainers.image.description=Ghostscript ${{ env.GHOSTSCRIPT_VERSION }} to copy into the ruby images of blish
+            org.opencontainers.image.version=${{ env.GHOSTSCRIPT_VERSION }}
+            org.opencontainers.image.url=https://github.com/blish/ruby-docker/releases/tag/${{ needs.version.outputs.tag }}
           load: true
           cache-from: type=gha,scope=ghostscript
           cache-to: type=gha,mode=max,scope=ghostscript
@@ -115,13 +188,60 @@ jobs:
       - name: Test
         run: test/ghostscript.sh
 
-      - if: env.PUSH == 'true'
+      - if: env.PUSH_GHOSTSCRIPT == 'true'
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - if: env.PUSH == 'true'
+      - if: env.PUSH_GHOSTSCRIPT == 'true'
         name: Push
-        run: docker push "$GHOSTSCRIPT_IMAGE"
+        run: |
+          docker push "$GHOSTSCRIPT_IMAGE"
+          mkdir release
+          echo "$GHOSTSCRIPT_IMAGE@$(docker inspect --format '{{index .RepoDigests 0}}' "$GHOSTSCRIPT_IMAGE" | cut -d@ -f2)" \
+            > release/images-ghostscript.txt
+
+      - if: env.PUSH_GHOSTSCRIPT == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-ghostscript
+          path: release/
+
+  # Publishes the release picked by the version job if any image was pushed. The notes list the
+  # pushed images, the package changes per Ruby version and the merged PRs (see .github/release.yml).
+  release:
+    needs: [version, ruby, ghostscript]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE: ${{ needs.version.outputs.tag }}
+      PREVIOUS: ${{ needs.version.outputs.previous }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*
+          path: current
+          merge-multiple: true
+
+      - id: pushed
+        name: Check for pushed images
+        run: |
+          if compgen -G 'current/images-*.txt' > /dev/null; then
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No image changed since $PREVIOUS, skipping the release."
+          fi
+
+      - if: steps.pushed.outputs.any == 'true'
+        name: Publish release
+        run: |
+          bin/release-notes current "$PREVIOUS" | tee notes.md
+          gh release create "$RELEASE" current/packages-*.txt \
+            --target "$GITHUB_SHA" --title "$RELEASE" --notes-file notes.md --generate-notes --latest

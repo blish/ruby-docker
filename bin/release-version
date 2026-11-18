@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Prints the facts the next release is based on, as key=value lines for $GITHUB_OUTPUT:
+#   tag           the UTC date as YYYYMMDD, with .1, .2 … if that release tag already exists
+#   previous      the latest release, empty if there is none
+#   code-changed  true if there is no release yet or commits were added since the latest one
+# Usage: bin/release-version [<commit>]   (requires an authenticated gh CLI, defaults to HEAD)
+set -euo pipefail
+
+commit="${1:-$(git rev-parse HEAD)}"
+
+# @param $1 [String] tag name
+# @return [Integer] 0 if the tag exists on origin, 1 if not; exits if origin can't be read
+tag_exists() {
+  local status=0
+  git ls-remote --exit-code --tags origin "refs/tags/$1" > /dev/null || status=$?
+  case "$status" in
+    0) return 0 ;;
+    2) return 1 ;;
+    *) exit "$status" ;;
+  esac
+}
+
+date="$(date -u +%Y%m%d)"
+tag="$date"
+n=0
+while tag_exists "$tag"; do
+  n=$((n + 1))
+  tag="$date.$n"
+done
+
+previous="$(gh release view --json tagName --jq .tagName 2> /dev/null || true)"
+
+code_changed=true
+if [ -n "$previous" ]; then
+  commits="$(gh api "repos/{owner}/{repo}/compare/$previous...$commit" --jq .total_commits)"
+  [ "$commits" = 0 ] && code_changed=false
+fi
+
+echo "tag=$tag"
+echo "previous=$previous"
+echo "code-changed=$code_changed"

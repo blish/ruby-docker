@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Prints the notes of a new release: the pushed images with their digests and the package changes
+# per Ruby version since the previous release. GitHub appends the merged PRs (see .github/release.yml).
+# Usage: bin/release-notes <dir> [<previous-release>]   (requires an authenticated gh CLI)
+#   <dir> holds the images-*.txt and packages-ruby-<ruby>.txt files written by .github/workflows/build.yml
+set -euo pipefail
+
+dir="${1:?usage: bin/release-notes <dir> [<previous-release>]}"
+previous="${2:-}"
+
+echo "## Images"
+echo
+sed -E 's/^(.*)@(sha256:.*)$/- `\1` `\2`/' "$dir"/images-*.txt
+echo
+echo "## Package updates"
+
+if [ -z "$previous" ]; then
+  printf '\nFirst release. The package lists are attached.\n'
+  exit 0
+fi
+
+old="$(mktemp -d)"
+trap 'rm -rf "$old"' EXIT
+gh release download "$previous" --pattern 'packages-*.txt' --dir "$old"
+
+changed=false
+for file in "$dir"/packages-ruby-*.txt; do
+  name="$(basename "$file")"
+  ruby="${name#packages-ruby-}"
+
+  if [ -f "$old/$name" ]; then
+    changes="$("$(dirname "$0")/package-changes" "$old/$name" "$file")"
+  else
+    changes="New in this release."
+  fi
+
+  if [ -n "$changes" ]; then
+    printf '\n### Ruby %s\n\n%s\n' "${ruby%.txt}" "$changes"
+    changed=true
+  fi
+done
+
+[ "$changed" = true ] || printf '\nNo package changes.\n'

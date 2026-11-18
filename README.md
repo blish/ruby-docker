@@ -8,7 +8,25 @@ Shared base images for the Rails production Dockerfiles of base-app, website, bu
 | `ghcr.io/blish/ruby:<ruby>-build` | Build stage: `bundle install`, asset precompile |
 | `ghcr.io/blish/ruby-ghostscript:<version>` | Opt-in Ghostscript, see [Ghostscript](#ghostscript) |
 
-Ruby versions: 3.4.12, 4.0.9. The list lives in the matrix of `.github/workflows/build.yml`. All images are `linux/amd64`. The pipeline builds the images, tests exactly those images and pushes them only from `main`: on every push, and without cache weekly and on manual dispatch (with `apt-get upgrade`). On PRs it builds and tests without pushing.
+`<ruby>` and `<ruby>-build` always point to the latest build. To pin a build, use `<ruby>-<release>` or `<ruby>-build-<release>`, e.g. `3.4.12-20261117`; these tags are never overwritten. See [Releases](#releases).
+
+Ruby versions: 3.4.12, 4.0.9. The list lives in the matrix of `.github/workflows/build.yml`. All images are `linux/amd64`. The pipeline builds the images, tests exactly those images and pushes them only from `main`, if they changed since the latest release: on every push, and without cache weekly and on manual dispatch (with `apt-get upgrade`). On PRs it builds and tests without pushing.
+
+## Releases
+
+[GitHub Releases](https://github.com/blish/ruby-docker/releases) are the changelog. On `main`, `build.yml` works in three steps:
+
+1. `bin/release-version` picks the release tag from the date (`YYYYMMDD`, with `.1`, `.2` … for further releases that day) and checks for commits since the latest release.
+2. Each image is built and tested. A Ruby image is pushed, as `<ruby>` and `<ruby>-<release>`, if there are new commits or `bin/package-changes` finds a changed package compared to the latest release's package list (`bin/image-packages`). The Ghostscript image is only pushed with new commits.
+3. If any image was pushed, a release is published with notes from `bin/release-notes`. Otherwise there is no release.
+
+Each release lists:
+
+- **Images**: the pushed tags with their digests
+- **Package updates**: changed Debian packages, Ruby, gems, Node, npm and corepack per Ruby version. This shows what the weekly rebuild picked up. The full lists are attached as `packages-ruby-<ruby>.txt`
+- **Merged PRs**, grouped by label as configured in `.github/release.yml`: image updates (`docker`), CI (`github_actions`) and others
+
+The images carry the release in their labels (`org.opencontainers.image.version`, `org.opencontainers.image.url`), next to a description shown on the package page.
 
 ## Contents
 
@@ -67,10 +85,13 @@ The packages are private. In the package settings of `ruby` and `ruby-ghostscrip
 ```sh
 test/run.sh 3.4.12        # runtime and build images
 test/ghostscript.sh       # Ghostscript image, copied into Debian trixie
+test/release.sh           # release scripts in bin/
 ```
 
 `test/run.sh` builds the images locally for `linux/amd64` and checks their contents, including a native gem compiled in the build image and loaded in the runtime image. Needs network access: the corepack checks download pnpm and yarn.
 
 `test/ghostscript.sh` builds `ghostscript/`, copies it into `debian:trixie-slim` (the base of the ruby images) as described above and checks that `gs` works there.
 
-In CI, `build.yml` runs them against the images it just built (via `RUNTIME_IMAGE`/`BUILD_IMAGE` and `GHOSTSCRIPT_IMAGE`) before pushing.
+`test/release.sh` tests the release scripts against stubbed `docker`, `gh` and `git`, so it needs neither Docker nor network. Needs a local Ruby for `bin/image-packages`.
+
+In CI, `build.yml` runs `test/release.sh` before it picks the release, and the image tests against the images it just built (via `RUNTIME_IMAGE`/`BUILD_IMAGE` and `GHOSTSCRIPT_IMAGE`) before pushing.
