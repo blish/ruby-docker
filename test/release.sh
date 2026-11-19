@@ -88,8 +88,8 @@ stub "$inner_node/corepack" 'echo 0.34.0'
 ruby_version="$(ruby -e 'print RUBY_VERSION')"
 
 : > "$STUBS_LOG"
-packages="$(INNER_PATH="$inner_node:$inner" "$root/bin/image-packages" ghcr.io/blish/ruby:3.4.12-build)"
-assert_line "image-packages: runs the image as root" "^docker run --rm --user root ghcr.io/blish/ruby:3.4.12-build " "$(cat "$STUBS_LOG")"
+packages="$(INNER_PATH="$inner_node:$inner" "$root/bin/image-packages" ghcr.io/blish/ruby:3.4.13-build)"
+assert_line "image-packages: runs the image as root" "^docker run --rm --user root ghcr.io/blish/ruby:3.4.13-build " "$(cat "$STUBS_LOG")"
 assert_line "image-packages: debian packages" "^libc6 2\.41-12$" "$packages"
 assert_line "image-packages: ruby" "^ruby $ruby_version$" "$packages"
 assert_line "image-packages: gems with prefix" "^gem:bundler [0-9.,]+$" "$packages"
@@ -99,7 +99,7 @@ assert_line "image-packages: corepack" "^corepack 0\.34\.0$" "$packages"
 assert_equal "image-packages: sorted" "$(LC_ALL=C sort <<< "$packages")" "$packages"
 assert_equal "image-packages: one version per name" "" "$(cut -d ' ' -f 1 <<< "$packages" | uniq -d)"
 
-packages="$(INNER_PATH="$inner" "$root/bin/image-packages" ghcr.io/blish/ruby:3.4.12)"
+packages="$(INNER_PATH="$inner" "$root/bin/image-packages" ghcr.io/blish/ruby:3.4.13)"
 ! grep -Eq '^(node|npm|corepack) ' <<< "$packages"
 report "image-packages: no node lines without node" $?
 
@@ -137,27 +137,27 @@ report "release-version: fails if origin can't be read" $?
 current="$tmp/current"
 assets="$tmp/assets"
 mkdir -p "$current" "$assets"
-printf 'ghcr.io/blish/ruby:3.4.12@sha256:aaa\nghcr.io/blish/ruby:3.4.12-build@sha256:bbb\n' > "$current/images-ruby-3.4.12.txt"
+printf 'ghcr.io/blish/ruby:3.4.13@sha256:aaa\nghcr.io/blish/ruby:3.4.13-build@sha256:bbb\n' > "$current/images-ruby-3.4.13.txt"
 printf 'ghcr.io/blish/ruby-ghostscript:10.08.0@sha256:ccc\n' > "$current/images-ghostscript.txt"
-printf 'libssl3 3.5.1-2\nruby 3.4.12\n' > "$current/packages-ruby-3.4.12.txt"
-printf 'ruby 4.0.9\n' > "$current/packages-ruby-4.0.9.txt"
-printf 'libssl3 3.5.1-1\nruby 3.4.12\n' > "$assets/packages-ruby-3.4.12.txt"
+printf 'libssl3 3.5.1-2\nruby 3.4.13\n' > "$current/packages-ruby-3.4.13.txt"
+printf 'ruby 4.0.10\n' > "$current/packages-ruby-4.0.10.txt"
+printf 'libssl3 3.5.1-1\nruby 3.4.13\n' > "$assets/packages-ruby-3.4.13.txt"
 
 images='## Images
 
 - `ghcr.io/blish/ruby-ghostscript:10.08.0` `sha256:ccc`
-- `ghcr.io/blish/ruby:3.4.12` `sha256:aaa`
-- `ghcr.io/blish/ruby:3.4.12-build` `sha256:bbb`
+- `ghcr.io/blish/ruby:3.4.13` `sha256:aaa`
+- `ghcr.io/blish/ruby:3.4.13-build` `sha256:bbb`
 
 ## Package updates'
 
 assert_equal "release-notes: package changes per Ruby version, new Ruby versions" "$images
 
-### Ruby 3.4.12
+### Ruby 3.4.13
 
 - \`libssl3\` 3.5.1-1 → 3.5.1-2
 
-### Ruby 4.0.9
+### Ruby 4.0.10
 
 New in this release." \
   "$(GH_ASSETS="$assets" "$root/bin/release-notes" "$current" 20261110)"
@@ -169,7 +169,7 @@ First release. The package lists are attached." \
   "$("$root/bin/release-notes" "$current")"
 assert_equal "release-notes: first release doesn't call gh" "" "$(cat "$STUBS_LOG")"
 
-cp "$current/packages-ruby-3.4.12.txt" "$current/packages-ruby-4.0.9.txt" "$assets/"
+cp "$current/packages-ruby-3.4.13.txt" "$current/packages-ruby-4.0.10.txt" "$assets/"
 assert_equal "release-notes: no package changes" "$images
 
 No package changes." \
