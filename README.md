@@ -8,9 +8,9 @@ Shared base images for the Rails production Dockerfiles of base-app, website, bu
 | `ghcr.io/blish/ruby:<ruby>-build` | Build stage: `bundle install`, asset precompile |
 | `ghcr.io/blish/ruby-ghostscript:<version>` | Opt-in Ghostscript, see [Ghostscript](#ghostscript) |
 
-`<ruby>` and `<ruby>-build` always point to the latest build. To pin a build, use `<ruby>-<release>` or `<ruby>-build-<release>`, e.g. `3.4.12-20261117`; these tags are never overwritten. See [Releases](#releases).
+`<ruby>` and `<ruby>-build` always point to the latest build. To pin a build, use `<ruby>-<release>` or `<ruby>-build-<release>`, e.g. `3.4.13-20261117`; these tags are never overwritten. See [Releases](#releases).
 
-Ruby versions: 3.4.12, 4.0.9. The list lives in the matrix of `.github/workflows/build.yml`. All images are `linux/amd64`. The pipeline builds the images, tests exactly those images and pushes them only from `main`, if they changed since the latest release: on every push, and without cache weekly and on manual dispatch (with `apt-get upgrade`). On PRs it builds and tests without pushing.
+Ruby versions: 3.4.13, 4.0.10. The list lives in the matrix of `.github/workflows/build.yml`. All images are `linux/amd64`. The pipeline builds the images, tests exactly those images and pushes them only from `main`, if they changed since the latest release: on every push, and without cache weekly and on manual dispatch (with `apt-get upgrade`). On PRs it builds and tests without pushing.
 
 ## Releases
 
@@ -46,7 +46,7 @@ The images carry the release in their labels (`org.opencontainers.image.version`
 ## App Dockerfile
 
 ```dockerfile
-ARG RUBY_VERSION=3.4.12
+ARG RUBY_VERSION=3.4.13
 FROM ghcr.io/blish/ruby:${RUBY_VERSION}-build AS build
 WORKDIR /rails
 COPY Gemfile Gemfile.lock .ruby-version ./
@@ -83,7 +83,7 @@ The packages are private. In the package settings of `ruby` and `ruby-ghostscrip
 ## Tests
 
 ```sh
-test/run.sh 3.4.12        # runtime and build images
+test/run.sh 3.4.13        # runtime and build images
 test/ghostscript.sh       # Ghostscript image, copied into Debian trixie
 test/release.sh           # release scripts in bin/
 ```

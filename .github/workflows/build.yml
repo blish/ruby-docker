@@ -48,7 +48,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ruby: ["3.4.12", "4.0.9"]
+        ruby: ["3.4.13", "4.0.10"]
     env:
       RUNTIME_IMAGE: ghcr.io/blish/ruby:${{ matrix.ruby }}
       BUILD_IMAGE: ghcr.io/blish/ruby:${{ matrix.ruby }}-build
