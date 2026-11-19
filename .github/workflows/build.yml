@@ -49,14 +49,23 @@ jobs:
       fail-fast: false
       matrix:
         ruby: ["3.4.13", "4.0.10"]
+        processor: [imagemagick, vips]
+        # ImageMagick keeps the plain <ruby> tags and is also pushed as <ruby>-imagemagick;
+        # vips gets <ruby>-vips.
+        include:
+          - processor: imagemagick
+            alias: -imagemagick
+          - processor: vips
+            suffix: -vips
     env:
-      RUNTIME_IMAGE: ghcr.io/blish/ruby:${{ matrix.ruby }}
-      BUILD_IMAGE: ghcr.io/blish/ruby:${{ matrix.ruby }}-build
+      TAG: ${{ matrix.ruby }}${{ matrix.suffix }}
+      RUNTIME_IMAGE: ghcr.io/blish/ruby:${{ matrix.ruby }}${{ matrix.suffix }}
+      BUILD_IMAGE: ghcr.io/blish/ruby:${{ matrix.ruby }}${{ matrix.suffix }}-build
       RELEASE: ${{ needs.version.outputs.tag }}
-      PACKAGES: release/packages-ruby-${{ matrix.ruby }}.txt
+      PACKAGES: release/packages-ruby-${{ matrix.ruby }}${{ matrix.suffix }}.txt
       LABELS: |
         org.opencontainers.image.source=https://github.com/blish/ruby-docker
-        org.opencontainers.image.description=Ruby ${{ matrix.ruby }} base images for the Rails apps of blish
+        org.opencontainers.image.description=Ruby ${{ matrix.ruby }} base images with ${{ matrix.processor }} for the Rails apps of blish
         org.opencontainers.image.version=${{ needs.version.outputs.tag }}
         org.opencontainers.image.url=https://github.com/blish/ruby-docker/releases/tag/${{ needs.version.outputs.tag }}
     steps:
@@ -75,13 +84,15 @@ jobs:
           target: runtime
           tags: ${{ env.RUNTIME_IMAGE }}
           platforms: linux/amd64
-          build-args: RUBY_VERSION=${{ matrix.ruby }}
+          build-args: |
+            RUBY_VERSION=${{ matrix.ruby }}
+            IMAGE_PROCESSOR=${{ matrix.processor }}
           labels: ${{ env.LABELS }}
           load: true
           pull: true
           no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
-          cache-from: type=gha,scope=${{ matrix.ruby }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.ruby }}
+          cache-from: type=gha,scope=${{ env.TAG }}
+          cache-to: type=gha,mode=max,scope=${{ env.TAG }}
 
       - name: Build build image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -90,17 +101,19 @@ jobs:
           target: build
           tags: ${{ env.BUILD_IMAGE }}
           platforms: linux/amd64
-          build-args: RUBY_VERSION=${{ matrix.ruby }}
+          build-args: |
+            RUBY_VERSION=${{ matrix.ruby }}
+            IMAGE_PROCESSOR=${{ matrix.processor }}
           labels: ${{ env.LABELS }}
           load: true
           pull: true
           # only rebuild the build stage, because runtime was cached in the step before
           no-cache-filters: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'build' || '' }}
-          cache-from: type=gha,scope=${{ matrix.ruby }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.ruby }}
+          cache-from: type=gha,scope=${{ env.TAG }}
+          cache-to: type=gha,mode=max,scope=${{ env.TAG }}
 
       - name: Test
-        run: test/run.sh ${{ matrix.ruby }}
+        run: test/run.sh ${{ matrix.ruby }} ${{ matrix.processor }}
 
       # The images only need a push if the code or one of their packages changed. The package list
       # comes from the build image, which contains every package of the runtime image.
@@ -130,22 +143,32 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Pushes <ruby> and <ruby>-<release> (and the same for -build); records the digests for the release notes.
+      # Pushes <tag> and <tag>-<release> (and the same for -build and the alias tags); records the
+      # digests for the release notes.
       - if: steps.changes.outputs.changed == 'true'
         name: Push
+        env:
+          ALIAS: ${{ matrix.alias && format('ghcr.io/blish/ruby:{0}{1}', matrix.ruby, matrix.alias) || '' }}
         run: |
-          for image in "$RUNTIME_IMAGE" "$BUILD_IMAGE"; do
-            docker tag "$image" "$image-$RELEASE"
-            docker push "$image"
-            docker push "$image-$RELEASE"
-            echo "$image@$(docker inspect --format '{{index .RepoDigests 0}}' "$image" | cut -d@ -f2)"
-          done > release/images-ruby-${{ matrix.ruby }}.txt
+          for variant in "" -build; do
+            image="ghcr.io/blish/ruby:$TAG$variant"
+            names=("$image")
+            [ -n "$ALIAS" ] && names+=("$ALIAS$variant")
+            for name in "${names[@]}"; do
+              for tag in "$name" "$name-$RELEASE"; do
+                docker tag "$image" "$tag"
+                docker push "$tag"
+              done
+            done
+            digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$image" | cut -d@ -f2)"
+            printf "%s@$digest\n" "${names[@]}"
+          done > release/images-ruby-${{ env.TAG }}.txt
 
-      # Always uploaded: every release attaches the package lists of all Ruby versions.
+      # Always uploaded: every release attaches the package lists of all Ruby versions and image processors.
       - if: env.PUSH == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: release-ruby-${{ matrix.ruby }}
+          name: release-ruby-${{ env.TAG }}
           path: release/
 
   # Opt-in Ghostscript image from ghostscript/Dockerfile, tagged with its pinned version.
