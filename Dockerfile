@@ -1,30 +1,27 @@
 # syntax=docker/dockerfile:1
 # check=error=true;skip=InvalidDefaultArgInFrom
 
-# Shared base images for Rails production builds.
-#   --target runtime  ghcr.io/blish/ruby:<ruby>        final stage of app images
-#   --target build    ghcr.io/blish/ruby:<ruby>-build  gem install and asset precompile
+# Shared base images for Rails production builds, one per image processor.
+#   --target runtime  ghcr.io/blish/ruby:<ruby>[-vips]        final stage of app images
+#   --target build    ghcr.io/blish/ruby:<ruby>[-vips]-build  gem install and asset precompile
+# IMAGE_PROCESSOR selects the stage below: imagemagick (plain tags) or vips (-vips tags).
 ARG RUBY_VERSION
+ARG IMAGE_PROCESSOR
 
 # The node image is pinned by digest; Dependabot updates tag and digest.
 # Node LTS for asset precompile; Dependabot bumps minor and patch versions of this tag.
 FROM docker.io/library/node:24.22.3-trixie-slim@sha256:af02d57b57719b9657a45199a79264a9437940cd55b3c7b3fc99615654f124a0 AS node
 
-FROM docker.io/library/ruby:${RUBY_VERSION}-slim-trixie AS runtime
+FROM docker.io/library/ruby:${RUBY_VERSION}-slim-trixie AS base
 
 # Install base packages.
 # The upgrade applies Debian security patches the upstream ruby tag may not have picked up yet.
-# libmagickcore-*-extra ships ImageMagick's built-in SVG coder, so `identify` reports SVGs
-# correctly. Without it SVGs go through the rsvg-convert delegate, are identified as PNG,
-# and Alchemy rasterizes them on upload.
 RUN apt-get update -qq && \
     apt-get upgrade -y && \
     apt-get install --no-install-recommends -y \
       curl \
       file \
-      imagemagick \
       libjemalloc2 \
-      libmagickcore-7.q16-10-extra \
       postgresql-client && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
@@ -37,19 +34,42 @@ ENV RAILS_ENV="production" \
 # CPU and counts the host's CPUs, not the container's limit, so every Puma worker and Sidekiq
 # process gets 4 × host CPUs arenas, which fragments memory. Ruby runs one thread at a time per
 # process (GVL), so narenas:2 is enough and the most important setting.
-# MAGICK_THREAD_LIMIT keeps ImageMagick from spawning a thread per CPU in every process.
 ENV LD_PRELOAD="libjemalloc.so.2" \
-    MALLOC_CONF="narenas:2,background_thread:true,thp:never,dirty_decay_ms:1000,muzzy_decay_ms:0" \
-    MAGICK_THREAD_LIMIT="1"
+    MALLOC_CONF="narenas:2,background_thread:true,thp:never,dirty_decay_ms:1000,muzzy_decay_ms:0"
 
 # Fail the build if jemalloc isn't loaded or MALLOC_CONF has a typo.
 RUN out="$(MALLOC_CONF="${MALLOC_CONF},stats_print:true" ruby -e0 2>&1)" && \
     echo "$out" | grep -q "Begin jemalloc statistics" && \
     ! echo "$out" | grep -q "Invalid conf"
 
-# Run as non-root by default; apps installing extra packages switch to `USER root` and back.
 RUN groupadd --system --gid 1000 rails && \
     useradd rails --uid 1000 --gid 1000 --no-log-init --create-home --shell /bin/bash
+
+# ghcr.io/blish/ruby:<ruby>
+# libmagickcore-*-extra ships ImageMagick's built-in SVG coder, so `identify` reports SVGs
+# correctly. Without it SVGs go through the rsvg-convert delegate, are identified as PNG,
+# and Alchemy rasterizes them on upload.
+# MAGICK_THREAD_LIMIT keeps ImageMagick from spawning a thread per CPU in every process.
+FROM base AS imagemagick
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y \
+      imagemagick \
+      libmagickcore-7.q16-10-extra && \
+    rm -rf /var/lib/apt/lists /var/cache/apt/archives
+ENV MAGICK_THREAD_LIMIT="1"
+
+# ghcr.io/blish/ruby:<ruby>-vips
+# libvips is Rails' and Alchemy's default variant processor (ruby-vips).
+# VIPS_CONCURRENCY keeps libvips from spawning a thread per CPU in every process.
+FROM base AS vips
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y \
+      libvips42t64 && \
+    rm -rf /var/lib/apt/lists /var/cache/apt/archives
+ENV VIPS_CONCURRENCY="1"
+
+# Run as non-root by default; apps installing extra packages switch to `USER root` and back.
+FROM ${IMAGE_PROCESSOR} AS runtime
 USER 1000:1000
 
 FROM runtime AS build

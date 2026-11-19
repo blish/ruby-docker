@@ -1,34 +1,36 @@
 #!/usr/bin/env bash
-# Builds the runtime and build images for one Ruby version and asserts their contents.
-# Usage: test/run.sh <ruby-version>
+# Builds the runtime and build images for one Ruby version and image processor and asserts their contents.
+# Usage: test/run.sh <ruby-version> <imagemagick|vips>
 # Set RUNTIME_IMAGE and BUILD_IMAGE to test already built images instead (CI).
 set -uo pipefail
 source "$(dirname "$0")/lib.sh"
 
-ruby="${1:?usage: test/run.sh <ruby-version>}"
+usage="usage: test/run.sh <ruby-version> <imagemagick|vips>"
+ruby="${1:?$usage}"
+processor="${2:?$usage}"
+case "$processor" in imagemagick|vips) ;; *) echo "$usage"; exit 1 ;; esac
 node="$(grep -oE 'library/node:[0-9.]+' "$root/Dockerfile" | cut -d: -f2)"
-runtime="${RUNTIME_IMAGE:-$base:$ruby}"
-build="${BUILD_IMAGE:-$base:$ruby-build}"
+runtime="${RUNTIME_IMAGE:-$base-$processor:$ruby}"
+build="${BUILD_IMAGE:-$base-$processor:$ruby-build}"
 
 if [ -z "${RUNTIME_IMAGE:-}" ]; then
   for target in runtime build; do
     tag="$runtime"; [ "$target" = build ] && tag="$build"
-    docker build --quiet --platform "$platform" --build-arg RUBY_VERSION="$ruby" \
+    docker build --quiet --platform "$platform" --build-arg RUBY_VERSION="$ruby" --build-arg IMAGE_PROCESSOR="$processor" \
       --target "$target" -t "$tag" "$root" >/dev/null || { echo "not ok - build $target"; exit 1; }
   done
 fi
 
 equals "runtime: ruby version" "$runtime" "ruby -e 'print RUBY_VERSION'" "$ruby"
 check "runtime: debian trixie" "$runtime" "grep -q VERSION_CODENAME=trixie /etc/os-release"
-check "runtime: packages" "$runtime" "command -v curl convert psql file"
+check "runtime: packages" "$runtime" "command -v curl psql file"
 check "runtime: postgres client 17" "$runtime" "psql --version | grep -Eq '^psql \(PostgreSQL\) 17\.'"
 check "runtime: env" "$runtime" 'env | grep -qx RAILS_ENV=production &&
   env | grep -qx BUNDLE_DEPLOYMENT=1 &&
   env | grep -qx BUNDLE_PATH=/usr/local/bundle &&
   env | grep -qx BUNDLE_WITHOUT=development &&
   env | grep -qx LD_PRELOAD=libjemalloc.so.2 &&
-  env | grep -qx MALLOC_CONF=narenas:2,background_thread:true,thp:never,dirty_decay_ms:1000,muzzy_decay_ms:0 &&
-  env | grep -qx MAGICK_THREAD_LIMIT=1'
+  env | grep -qx MALLOC_CONF=narenas:2,background_thread:true,thp:never,dirty_decay_ms:1000,muzzy_decay_ms:0'
 jemalloc='ruby -e "exit File.read(%(/proc/self/maps)).include?(%(jemalloc))"'
 check "runtime: jemalloc" "$runtime" "$jemalloc"
 check_as 1000 "runtime: jemalloc as uid 1000" "$runtime" "$jemalloc"
@@ -39,10 +41,19 @@ check "runtime: rails home+shell" "$runtime" "getent passwd rails | grep -q ':/h
 equals "runtime: runs as uid 1000" "$runtime" "id -u" "1000"
 equals "runtime: no workdir" "$runtime" "pwd" "/"
 check "runtime: no node/gcc" "$runtime" "! command -v node && ! command -v gcc"
-equals "runtime: imagemagick works" "$runtime" \
-  "convert -size 1x1 xc:red /tmp/a.png && identify -format %m /tmp/a.png" "PNG"
-equals "runtime: svg identified as svg" "$runtime" \
-  "echo '<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"/>' > /tmp/a.svg && identify -format %m /tmp/a.svg" "SVG"
+libvips="ldconfig -p | grep -q 'libvips.so.42 '"
+if [ "$processor" = imagemagick ]; then
+  check "runtime: imagemagick env" "$runtime" "env | grep -qx MAGICK_THREAD_LIMIT=1"
+  equals "runtime: imagemagick works" "$runtime" \
+    "convert -size 1x1 xc:red /tmp/a.png && identify -format %m /tmp/a.png" "PNG"
+  equals "runtime: svg identified as svg" "$runtime" \
+    "echo '<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"/>' > /tmp/a.svg && identify -format %m /tmp/a.svg" "SVG"
+  check "runtime: no libvips" "$runtime" "! { $libvips; }"
+else
+  check "runtime: vips env" "$runtime" "env | grep -qx VIPS_CONCURRENCY=1"
+  check "runtime: libvips" "$runtime" "$libvips"
+  check "runtime: no imagemagick" "$runtime" "! command -v convert && ! command -v identify"
+fi
 check "runtime: no ghostscript" "$runtime" "! command -v gs"
 check_as 0 "runtime: debian packages up to date" "$runtime" \
   'apt-get update -qq && [ -z "$(apt list --upgradable 2>/dev/null | tail -n +2)" ]'
