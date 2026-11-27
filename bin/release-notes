@@ -1,16 +1,115 @@
 #!/usr/bin/env bash
-# Prints the notes of a new release: the pushed images with their digests and the package changes
-# per Ruby version since the previous release. GitHub appends the merged PRs (see .github/release.yml).
-# Usage: bin/release-notes <dir> [<previous-release>]   (requires an authenticated gh CLI)
-#   <dir> holds the images-*.txt and packages-ruby-<ruby>.txt files written by .github/workflows/build.yml
+# Prints the notes of a new release: a summary with the notable package updates, the pushed images
+# and the package changes since the previous release, grouped by the images they apply to.
+# GitHub appends the merged PRs (see .github/release.yml).
+# Usage: bin/release-notes <dir> <release> [<previous-release> [<event>]]   (requires an authenticated gh CLI)
+#   <dir>    holds the images-*.txt and packages-ruby-<tag>.txt files written by .github/workflows/build.yml
+#   <event>  the GitHub event that started the build: schedule, workflow_dispatch or push
 set -euo pipefail
+export LC_ALL=C
 
-dir="${1:?usage: bin/release-notes <dir> [<previous-release>]}"
-previous="${2:-}"
+usage="usage: bin/release-notes <dir> <release> [<previous-release> [<event>]]"
+dir="${1:?$usage}"
+release="${2:?$usage}"
+previous="${3:-}"
+event="${4:-}"
 
+# Packages shown in the summary if they changed.
+notable='^(ruby|node|openssl|libc6|imagemagick|libvips[0-9]+(t64)?|postgresql-client)$'
+# Package lists longer than this are collapsed.
+collapse=10
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+# Only "<image>@<digest>" lines, in case anything else ended up in the files.
+grep -hE '^[^ ]+@sha256:[0-9a-f]+$' "$dir"/images-*.txt > "$tmp/images" || true
+
+mapfile -t variants < <(cd "$dir" && ls packages-ruby-*.txt | sed -E 's/^packages-ruby-(.*)\.txt$/\1/' | sort)
+
+# "<variant><TAB><change>" lines for the variants of the previous release, new variants separately.
+: > "$tmp/changes"
+new=()
+if [ -n "$previous" ]; then
+  mkdir "$tmp/old"
+  gh release download "$previous" --pattern 'packages-*.txt' --dir "$tmp/old"
+fi
+for variant in "${variants[@]}"; do
+  name="packages-ruby-$variant.txt"
+  if [ -f "$tmp/old/$name" ]; then
+    "$(dirname "$0")/package-changes" "$tmp/old/$name" "$dir/$name" | sed "s/^/$variant\t/" >> "$tmp/changes"
+  else
+    new+=("$variant")
+  fi
+done
+
+# --- Summary
+
+case "$event" in
+  schedule) summary=("Weekly rebuild") ;;
+  workflow_dispatch) summary=("Manual rebuild") ;;
+  push) summary=("Merged changes") ;;
+  *) summary=() ;;
+esac
+if [ -z "$previous" ]; then
+  summary+=("First release")
+else
+  count="$(cut -f 2 "$tmp/changes" | awk '{ print $2 }' | sort -u | wc -l | tr -d ' ')"
+  case "$count" in
+    0) summary+=("No package updates") ;;
+    1) summary+=("1 package update") ;;
+    *) summary+=("$count package updates") ;;
+  esac
+  [ "${#new[@]}" -eq 0 ] || summary+=("New: $(printf 'Ruby %s, ' "${new[@]}" | sed 's/, $//')")
+fi
+
+line="${summary[0]}"
+for part in "${summary[@]:1}"; do line+=" · $part"; done
+echo "$line"
+cut -f 2 "$tmp/changes" | sort -u | awk -v re="$notable" '{ name = $2; gsub(/`/, "", name) } name ~ re' > "$tmp/notable"
+if [ -s "$tmp/notable" ]; then
+  echo
+  cat "$tmp/notable"
+fi
+
+# --- Images
+
+echo
 echo "## Images"
 echo
-sed -E 's/^(.*)@(sha256:.*)$/- `\1` `\2`/' "$dir"/images-*.txt
+awk -F@ -v release="$release" '
+  {
+    repo = $1; sub(/:[^:]*$/, "", repo)
+    tag = $1; sub(/^.*:/, "", tag)
+    if (repo != "ghcr.io/blish/ruby") { other[++o] = $1; next }
+    if (tag ~ /-(build|imagemagick)$/) next
+    ruby = tag; sub(/-.*/, "", ruby)
+    if (!(ruby in seen)) { seen[ruby] = 1; rubies[++r] = ruby }
+    cell[ruby, tag ~ /-vips$/ ? "vips" : "imagemagick"] = "`" tag "`"
+  }
+  END {
+    if (r) {
+      print "| Ruby | ImageMagick | vips |"
+      print "| --- | --- | --- |"
+      for (i = 1; i <= r; i++) {
+        im = cell[rubies[i], "imagemagick"]; vips = cell[rubies[i], "vips"]
+        printf "| %s | %s | %s |\n", rubies[i], im ? im : "–", vips ? vips : "–"
+      }
+      print ""
+      print "Tags on `ghcr.io/blish/ruby`, each also pushed as `<tag>-" release "`. The build images add `-build`, the ImageMagick tags have the alias `<ruby>-imagemagick`."
+    }
+    for (i = 1; i <= o; i++) { if (i == 1 && r) print ""; print "- `" other[i] "`" }
+  }
+' "$tmp/images"
+echo
+echo "<details><summary>Digests</summary>"
+echo
+sed -E 's/^(.*)@(sha256:.*)$/- `\1` `\2`/' "$tmp/images"
+echo
+echo "</details>"
+
+# --- Package updates
+
 echo
 echo "## Package updates"
 
@@ -19,25 +118,30 @@ if [ -z "$previous" ]; then
   exit 0
 fi
 
-old="$(mktemp -d)"
-trap 'rm -rf "$old"' EXIT
-gh release download "$previous" --pattern 'packages-*.txt' --dir "$old"
+# Each change once, under the images it applies to: "All Ruby images" first, then the others.
+awk -F'\t' -v total="${#variants[@]}" -v collapse="$collapse" '
+  !($2 in images) { changes[++n] = $2; images[$2] = "Ruby " $1; count[$2] = 1; next }
+  { images[$2] = images[$2] ", Ruby " $1; count[$2]++ }
+  END {
+    for (i = 1; i <= n; i++) {
+      c = changes[i]
+      group = (total > 1 && count[c] == total) ? "All Ruby images" : images[c]
+      if (!(group in size)) groups[++g] = group
+      lines[group] = lines[group] c "\n"
+      size[group]++
+    }
+    for (i = 1; i <= g; i++) if (groups[i] == "All Ruby images") print_group(groups[i])
+    for (i = 1; i <= g; i++) if (groups[i] != "All Ruby images") print_group(groups[i])
+  }
+  function print_group(group) {
+    printf "\n### %s\n\n", group
+    if (size[group] > collapse) printf "<details><summary>%d packages</summary>\n\n%s\n</details>\n", size[group], lines[group]
+    else printf "%s", lines[group]
+  }
+' "$tmp/changes"
 
-changed=false
-for file in "$dir"/packages-ruby-*.txt; do
-  name="$(basename "$file")"
-  ruby="${name#packages-ruby-}"
-
-  if [ -f "$old/$name" ]; then
-    changes="$("$(dirname "$0")/package-changes" "$old/$name" "$file")"
-  else
-    changes="New in this release."
-  fi
-
-  if [ -n "$changes" ]; then
-    printf '\n### Ruby %s\n\n%s\n' "${ruby%.txt}" "$changes"
-    changed=true
-  fi
+for variant in "${new[@]}"; do
+  printf '\n### Ruby %s\n\nNew in this release. Its package list is attached.\n' "$variant"
 done
 
-[ "$changed" = true ] || printf '\nNo package changes.\n'
+[ -s "$tmp/changes" ] || [ "${#new[@]}" -gt 0 ] || printf '\nNo package changes.\n'

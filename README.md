@@ -26,8 +26,9 @@ Ruby versions: 3.4.13, 4.0.10. The list lives in the matrix of `.github/workflow
 
 Each release lists:
 
-- **Images**: the pushed tags with their digests
-- **Package updates**: changed Debian packages, Ruby, gems, Node, npm and corepack per Ruby version and variant. This shows what the weekly rebuild picked up. The full lists are attached as `packages-ruby-<ruby>[-vips].txt`
+- **Summary**: why the release was built (weekly rebuild, manual rebuild or merged changes), the number of package updates and the updates of notable packages (Ruby, Node, OpenSSL, glibc, ImageMagick, vips, PostgreSQL client)
+- **Images**: the pushed tags per Ruby version and image processor, the digests collapsed
+- **Package updates**: changed Debian packages, Ruby, gems, Node, npm and corepack. Each change is listed once, under the images it applies to ("All Ruby images" or the affected variants); lists of more than 10 packages are collapsed. The full lists are attached as `packages-ruby-<ruby>[-vips].txt`
 - **Merged PRs**, grouped by label as configured in `.github/release.yml`: image updates (`docker`), CI (`github_actions`) and others
 
 The images carry the release in their labels (`org.opencontainers.image.version`, `org.opencontainers.image.url`), next to a description shown on the package page.

@@ -137,42 +137,92 @@ report "release-version: fails if origin can't be read" $?
 current="$tmp/current"
 assets="$tmp/assets"
 mkdir -p "$current" "$assets"
-printf 'ghcr.io/blish/ruby:3.4.13@sha256:aaa\nghcr.io/blish/ruby:3.4.13-build@sha256:bbb\n' > "$current/images-ruby-3.4.13.txt"
+printf '%s\n' 'The push refers to repository [ghcr.io/blish/ruby]' 'a75a023fde39: Pushed' \
+  '3.4.13: digest: sha256:aaa size: 2005' \
+  'ghcr.io/blish/ruby:3.4.13@sha256:aaa' 'ghcr.io/blish/ruby:3.4.13-imagemagick@sha256:aaa' \
+  'ghcr.io/blish/ruby:3.4.13-build@sha256:bbb' > "$current/images-ruby-3.4.13.txt"
+printf 'ghcr.io/blish/ruby:3.4.13-vips@sha256:ddd\n' > "$current/images-ruby-3.4.13-vips.txt"
 printf 'ghcr.io/blish/ghostscript:10.08.0@sha256:ccc\n' > "$current/images-ghostscript.txt"
 printf 'libssl3 3.5.1-2\nruby 3.4.13\n' > "$current/packages-ruby-3.4.13.txt"
+printf 'libssl3 3.5.1-2\nlibvips42t64 8.16.1-2\nruby 3.4.13\n' > "$current/packages-ruby-3.4.13-vips.txt"
 printf 'ruby 4.0.10\n' > "$current/packages-ruby-4.0.10.txt"
 printf 'libssl3 3.5.1-1\nruby 3.4.13\n' > "$assets/packages-ruby-3.4.13.txt"
+printf 'libssl3 3.5.1-1\nlibvips42t64 8.16.1-1\nruby 3.4.13\n' > "$assets/packages-ruby-3.4.13-vips.txt"
 
 images='## Images
 
+| Ruby | ImageMagick | vips |
+| --- | --- | --- |
+| 3.4.13 | `3.4.13` | `3.4.13-vips` |
+
+Tags on `ghcr.io/blish/ruby`, each also pushed as `<tag>-20261120`. The build images add `-build`, the ImageMagick tags have the alias `<ruby>-imagemagick`.
+
+- `ghcr.io/blish/ghostscript:10.08.0`
+
+<details><summary>Digests</summary>
+
 - `ghcr.io/blish/ghostscript:10.08.0` `sha256:ccc`
+- `ghcr.io/blish/ruby:3.4.13-vips` `sha256:ddd`
 - `ghcr.io/blish/ruby:3.4.13` `sha256:aaa`
+- `ghcr.io/blish/ruby:3.4.13-imagemagick` `sha256:aaa`
 - `ghcr.io/blish/ruby:3.4.13-build` `sha256:bbb`
+
+</details>
 
 ## Package updates'
 
-assert_equal "release-notes: package changes per Ruby version, new Ruby versions" "$images
+assert_equal "release-notes: summary, images without push output, changes grouped by images, new variants" \
+"Weekly rebuild · 2 package updates · New: Ruby 4.0.10
 
-### Ruby 3.4.13
+- \`libvips42t64\` 8.16.1-1 → 8.16.1-2
+
+$images
+
+### Ruby 3.4.13, Ruby 3.4.13-vips
 
 - \`libssl3\` 3.5.1-1 → 3.5.1-2
 
+### Ruby 3.4.13-vips
+
+- \`libvips42t64\` 8.16.1-1 → 8.16.1-2
+
 ### Ruby 4.0.10
 
-New in this release." \
-  "$(GH_ASSETS="$assets" "$root/bin/release-notes" "$current" 20261110)"
+New in this release. Its package list is attached." \
+  "$(GH_ASSETS="$assets" "$root/bin/release-notes" "$current" 20261120 20261110 schedule)"
 
 : > "$STUBS_LOG"
-assert_equal "release-notes: first release" "$images
+assert_equal "release-notes: first release" "Merged changes · First release
+
+$images
 
 First release. The package lists are attached." \
-  "$("$root/bin/release-notes" "$current")"
+  "$("$root/bin/release-notes" "$current" 20261120 "" push)"
 assert_equal "release-notes: first release doesn't call gh" "" "$(cat "$STUBS_LOG")"
 
-cp "$current/packages-ruby-3.4.13.txt" "$current/packages-ruby-4.0.10.txt" "$assets/"
-assert_equal "release-notes: no package changes" "$images
+cp "$current"/packages-ruby-*.txt "$assets/"
+assert_equal "release-notes: no package changes" "No package updates
+
+$images
 
 No package changes." \
-  "$(GH_ASSETS="$assets" "$root/bin/release-notes" "$current" 20261110)"
+  "$(GH_ASSETS="$assets" "$root/bin/release-notes" "$current" 20261120 20261110)"
+
+rm "$current/packages-ruby-4.0.10.txt" "$assets/packages-ruby-4.0.10.txt"
+for n in $(seq 10 20); do echo "lib$n 1"; done > "$assets/packages-ruby-3.4.13.txt"
+for n in $(seq 10 20); do echo "lib$n 2"; done > "$current/packages-ruby-3.4.13.txt"
+cp "$assets/packages-ruby-3.4.13.txt" "$assets/packages-ruby-3.4.13-vips.txt"
+cp "$current/packages-ruby-3.4.13.txt" "$current/packages-ruby-3.4.13-vips.txt"
+notes="$(GH_ASSETS="$assets" "$root/bin/release-notes" "$current" 20261120 20261110 workflow_dispatch)"
+assert_line "release-notes: summary counts packages once" "^Manual rebuild · 11 package updates$" "$notes"
+assert_equal "release-notes: changes of all images once, long lists collapsed" \
+"### All Ruby images
+
+<details><summary>11 packages</summary>
+
+$(for n in $(seq 10 20); do echo "- \`lib$n\` 1 → 2"; done)
+
+</details>" \
+  "$(sed -n '/^### /,$p' <<< "$notes")"
 
 finish
