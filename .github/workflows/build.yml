@@ -184,7 +184,7 @@ jobs:
       - run: |
           version="$(grep -oE 'GHOSTSCRIPT_VERSION=[0-9.]+' ghostscript/Dockerfile | cut -d= -f2)"
           echo "GHOSTSCRIPT_VERSION=$version" >> "$GITHUB_ENV"
-          echo "GHOSTSCRIPT_IMAGE=ghcr.io/blish/ruby-ghostscript:$version" >> "$GITHUB_ENV"
+          echo "GHOSTSCRIPT_IMAGE=ghcr.io/blish/ghostscript:$version" >> "$GITHUB_ENV"
 
       # Not the default builder: the test's own docker build must see the loaded image.
       - id: buildx

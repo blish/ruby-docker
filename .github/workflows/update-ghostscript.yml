@@ -59,6 +59,6 @@ jobs:
 
           The tarball was verified against the release's \`SHA512SUMS\`; its sha256 is pinned in \`ADD --checksum\`.
 
-          After merging, bump \`ruby-ghostscript:$CURRENT\` to \`ruby-ghostscript:$VERSION\` in the apps that use it.
+          After merging, bump \`ghostscript:$CURRENT\` to \`ghostscript:$VERSION\` in the apps that use it.
           EOF
           )"
