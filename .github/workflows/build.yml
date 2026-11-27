@@ -157,7 +157,8 @@ jobs:
             for name in "${names[@]}"; do
               for tag in "$name" "$name-$RELEASE"; do
                 docker tag "$image" "$tag"
-                docker push "$tag"
+                # The push progress must not end up in the images file.
+                docker push --quiet "$tag" > /dev/null
               done
             done
             digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$image" | cut -d@ -f2)"
