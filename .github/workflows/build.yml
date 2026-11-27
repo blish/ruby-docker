@@ -268,3 +268,12 @@ jobs:
           bin/release-notes current "$PREVIOUS" | tee notes.md
           gh release create "$RELEASE" current/packages-*.txt \
             --target "$GITHUB_SHA" --title "$RELEASE" --notes-file notes.md --generate-notes --latest
+
+  passed:
+    if: always()
+    needs: [ruby, ghostscript]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any needed job did not succeed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
