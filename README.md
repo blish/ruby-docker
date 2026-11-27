@@ -86,7 +86,7 @@ Ghostscript isn't tracked by Dependabot or covered by Debian security updates. I
 
 ## Pull access
 
-The packages are private. In the package settings of `ruby` and `ghostscript`, grant read access to the app repositories so their workflows can pull with `GITHUB_TOKEN`. Kamal hosts and builders log in to `ghcr.io` with a token that has `read:packages`.
+The packages are public.
 
 ## Tests
 
