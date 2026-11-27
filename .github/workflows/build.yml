@@ -157,7 +157,8 @@ jobs:
             for name in "${names[@]}"; do
               for tag in "$name" "$name-$RELEASE"; do
                 docker tag "$image" "$tag"
-                docker push "$tag"
+                # The push progress must not end up in the images file.
+                docker push --quiet "$tag" > /dev/null
               done
             done
             digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$image" | cut -d@ -f2)"
@@ -232,8 +233,8 @@ jobs:
           name: release-ghostscript
           path: release/
 
-  # Publishes the release picked by the version job if any image was pushed. The notes list the
-  # pushed images, the package changes per Ruby version and the merged PRs (see .github/release.yml).
+  # Publishes the release picked by the version job if any image was pushed. The notes list a summary,
+  # the pushed images, the package changes and the merged PRs (see .github/release.yml).
   release:
     needs: [version, ruby, ghostscript]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
@@ -244,6 +245,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       RELEASE: ${{ needs.version.outputs.tag }}
       PREVIOUS: ${{ needs.version.outputs.previous }}
+      EVENT: ${{ github.event_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -265,7 +267,7 @@ jobs:
       - if: steps.pushed.outputs.any == 'true'
         name: Publish release
         run: |
-          bin/release-notes current "$PREVIOUS" | tee notes.md
+          bin/release-notes current "$RELEASE" "$PREVIOUS" "$EVENT" | tee notes.md
           gh release create "$RELEASE" current/packages-*.txt \
             --target "$GITHUB_SHA" --title "$RELEASE" --notes-file notes.md --generate-notes --latest
 
