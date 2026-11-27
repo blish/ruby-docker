@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # check=error=true
 
-# ghcr.io/blish/ruby-ghostscript:<version>
+# ghcr.io/blish/ghostscript:<version>
 # Ghostscript for ZUGFeRD invoice PDFs. Debian trixie ships 10.05.1, whose ZUGFeRD embedding
 # PDFBox can't read; 10.06+ is needed. Not part of the ruby images: apps that need it copy
 # this image's /usr/local into their final stage. Separate from ../Dockerfile, which is

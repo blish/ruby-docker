@@ -138,14 +138,14 @@ current="$tmp/current"
 assets="$tmp/assets"
 mkdir -p "$current" "$assets"
 printf 'ghcr.io/blish/ruby:3.4.13@sha256:aaa\nghcr.io/blish/ruby:3.4.13-build@sha256:bbb\n' > "$current/images-ruby-3.4.13.txt"
-printf 'ghcr.io/blish/ruby-ghostscript:10.08.0@sha256:ccc\n' > "$current/images-ghostscript.txt"
+printf 'ghcr.io/blish/ghostscript:10.08.0@sha256:ccc\n' > "$current/images-ghostscript.txt"
 printf 'libssl3 3.5.1-2\nruby 3.4.13\n' > "$current/packages-ruby-3.4.13.txt"
 printf 'ruby 4.0.10\n' > "$current/packages-ruby-4.0.10.txt"
 printf 'libssl3 3.5.1-1\nruby 3.4.13\n' > "$assets/packages-ruby-3.4.13.txt"
 
 images='## Images
 
-- `ghcr.io/blish/ruby-ghostscript:10.08.0` `sha256:ccc`
+- `ghcr.io/blish/ghostscript:10.08.0` `sha256:ccc`
 - `ghcr.io/blish/ruby:3.4.13` `sha256:aaa`
 - `ghcr.io/blish/ruby:3.4.13-build` `sha256:bbb`
 

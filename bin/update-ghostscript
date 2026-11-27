@@ -30,7 +30,7 @@ sed -i -E \
   -e "s/GHOSTSCRIPT_TAG=gs[0-9]+/GHOSTSCRIPT_TAG=$tag/" \
   -e "s/(--checksum=sha256:)[0-9a-f]{64}/\1$sha256/" \
   ghostscript/Dockerfile
-sed -i "s/ruby-ghostscript:$current/ruby-ghostscript:$version/g" README.md
+sed -i "s/ghostscript:$current/ghostscript:$version/g" README.md
 
 echo "Updated Ghostscript from $current to $version ($tag)"
 if [ -n "${GITHUB_OUTPUT:-}" ]; then

@@ -8,7 +8,7 @@ Shared base images for the Rails production Dockerfiles of base-app, website, bu
 | `ghcr.io/blish/ruby:<ruby>-build` | Build stage: `bundle install`, asset precompile; also tagged `<ruby>-imagemagick-build` |
 | `ghcr.io/blish/ruby:<ruby>-vips` | Runtime with libvips instead of ImageMagick |
 | `ghcr.io/blish/ruby:<ruby>-vips-build` | Build stage for `<ruby>-vips` |
-| `ghcr.io/blish/ruby-ghostscript:<version>` | Opt-in Ghostscript, see [Ghostscript](#ghostscript) |
+| `ghcr.io/blish/ghostscript:<version>` | Opt-in Ghostscript, see [Ghostscript](#ghostscript) |
 
 Both variants are identical apart from the image processor, see [Contents](#contents).
 
@@ -77,7 +77,7 @@ To opt in, copy it into the app's final stage:
 
 ```dockerfile
 FROM ghcr.io/blish/ruby:${RUBY_VERSION}
-COPY --from=ghcr.io/blish/ruby-ghostscript:10.08.0 /usr/local/ /usr/local/
+COPY --from=ghcr.io/blish/ghostscript:10.08.0 /usr/local/ /usr/local/
 ```
 
 This adds `/usr/local/bin/gs` and its resources in `/usr/local/share/ghostscript`. Nothing is compiled in the app.
@@ -86,7 +86,7 @@ Ghostscript isn't tracked by Dependabot or covered by Debian security updates. I
 
 ## Pull access
 
-The packages are private. In the package settings of `ruby` and `ruby-ghostscript`, grant read access to the app repositories so their workflows can pull with `GITHUB_TOKEN`. Kamal hosts and builders log in to `ghcr.io` with a token that has `read:packages`.
+The packages are public.
 
 ## Tests
 
